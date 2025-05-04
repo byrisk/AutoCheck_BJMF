@@ -39,8 +39,8 @@ class AppConstants:
     )
     DEFAULT_RUN_TIME = {
         'enable_time_range': False,  # 默认不启用时间段控制
-        'start_time': '08:00',     # 默认开始时间
-        'end_time': '22:00'        # 默认结束时间
+        'start_time': '',     # 默认开始时间
+        'end_time': ''        # 默认结束时间
     }
 
 # === 日志系统 ===
@@ -533,42 +533,45 @@ class ConfigUpdater:
         self.logger.log("--------------------------------", LogLevel.INFO)
 
     def _get_user_choice_with_timeout(self, prompt: str, choices: Tuple[str, ...], 
-                                   default: Optional[str] = None, 
-                                   timeout: int = 10) -> str:
-        """
-        Windows专用带超时的用户选择输入
-        :param prompt: 提示信息
-        :param choices: 可选值列表
-        :param default: 默认值
-        :param timeout: 超时时间(秒)
-        :return: 用户选择或默认值
-        """
-        print(prompt, end='', flush=True)
-        start_time = time.time()
-        
-        while True:
-            # 检查是否有按键输入
-            if msvcrt.kbhit():
-                char = msvcrt.getwch().lower()  # 获取输入字符并转为小写
-                if char in choices:
-                    print(char)  # 回显用户输入
-                    return char
-                elif char == '\r' and default:  # 回车键使用默认值
-                    print(default)
-                    return default
-            
-            # 检查是否超时
-            if time.time() - start_time > timeout:
+                                        default: Optional[str] = None, 
+                                        timeout: int = 10) -> str:
+            user_input = None
+
+            def get_input():
+                nonlocal user_input
+                try:
+                    user_input = input(prompt).strip().lower()
+                except EOFError:
+                    pass
+
+            input_thread = threading.Thread(target=get_input)
+            input_thread.start()
+
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if not input_thread.is_alive():
+                    break
+                time.sleep(0.1)
+
+            if input_thread.is_alive():
                 print(f"\n{Fore.YELLOW}输入超时，自动选择默认值 '{default}'{Style.RESET_ALL}")
                 return default
-            
-            time.sleep(0.1)  # 避免CPU占用过高
+
+            if not user_input and default:
+                return default
+
+            if user_input in choices:
+                return user_input
+
+            print(f"\033[31m请输入 {' 或 '.join(choices)}\033[0m")
+            return self._get_user_choice_with_timeout(prompt, choices, default, timeout)
+
 
     def _should_update_config(self) -> bool:
         """Windows专用：检查是否需要更新配置，10秒无输入默认返回False"""
         return self._get_user_choice_with_timeout(
             "当前配置有效。是否修改配置？(y/n, 默认n): ",
-            ('y', 'n'),
+            ('y','n'),
             default='n',
             timeout=10
         ) == 'y'
@@ -684,6 +687,13 @@ class ConfigUpdater:
                     selected_class_id = self._select_class_id()
                     self.manager.config["class_id"] = selected_class_id
                     self.manager.config["cookie"] = self.scanned_cookie
+                    self.manager.save()
+                    masked_cookie = f"{cookie[:10]}...{cookie[-10:]}"if len(cookie) > 20 else cookie
+                    self.logger.log("扫码获取成功, 关键配置已更新", LogLevel.INFO)
+                    self.logger.log(f"配置的 cookie: {masked_cookie}", LogLevel.INFO)
+                    self.logger.log(f"配置的 classid: {selected_class_id}", LogLevel.INFO)
+                    
+
                     return True
             except Exception as e:
                 self.logger.log(f"第 {attempt} 次扫码尝试失败: {e}", LogLevel.ERROR)

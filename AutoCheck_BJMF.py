@@ -17,21 +17,15 @@ from pydantic import BaseModel, field_validator, ValidationError
 from typing import Dict, List, Set, Optional, Callable, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum, auto
+import threading
+from copy import deepcopy
+from datetime import timedelta
+import msvcrt
 
 # 初始化 colorama
 colorama.init(autoreset=True)
 
-
-# 定义日志级别枚举类
-class LogLevel(Enum):
-    DEBUG = auto()
-    INFO = auto()
-    WARNING = auto()
-    ERROR = auto()
-
-
-# 定义应用常量数据类
-@dataclass
+# === 常量定义 ===
 class AppConstants:
     REQUIRED_FIELDS: Tuple[str, ...] = ("class_id", "cookie", "lat", "lng", "acc")
     COOKIE_PATTERN: str = r'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d=[^;]+'
@@ -43,16 +37,24 @@ class AppConstants:
         "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/{chrome_version} Mobile Safari/537.36 "
         "MicroMessenger/{wechat_version} NetType/{net_type} Language/zh_CN"
     )
+    DEFAULT_RUN_TIME = {
+        'enable_time_range': False,  # 默认不启用时间段控制
+        'start_time': '08:00',     # 默认开始时间
+        'end_time': '22:00'        # 默认结束时间
+    }
 
+# === 日志系统 ===
+class LogLevel(Enum):
+    DEBUG = auto()
+    INFO = auto()
+    WARNING = auto()
+    ERROR = auto()
 
-# 定义日志记录接口
 class LoggerInterface(ABC):
     @abstractmethod
     def log(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
         pass
 
-
-# 实现日志记录类
 class FileLogger(LoggerInterface):
     def __init__(self, log_file: str = "auto_check.log"):
         self.log_file = os.path.join(AppConstants.LOG_DIR, log_file)
@@ -85,8 +87,7 @@ class FileLogger(LoggerInterface):
             color = color_map.get(level, "")
             print(f"{color}[{timestamp}] [{level.name}] {message}{Style.RESET_ALL}")
 
-
-# 定义配置存储接口
+# === 配置系统 ===
 class ConfigStorageInterface(ABC):
     @abstractmethod
     def load(self) -> Dict[str, Any]:
@@ -96,8 +97,6 @@ class ConfigStorageInterface(ABC):
     def save(self, config: Dict[str, Any]) -> None:
         pass
 
-
-# 实现配置存储类
 class JsonConfigStorage(ConfigStorageInterface):
     def __init__(self, config_path: str = AppConstants.CONFIG_FILE):
         self.config_path = config_path
@@ -118,8 +117,6 @@ class JsonConfigStorage(ConfigStorageInterface):
         except IOError as e:
             raise ValueError(f"保存配置文件 {self.config_path} 时出错: {e}")
 
-
-# 定义配置模型类
 class ConfigModel(BaseModel):
     class_id: str
     lat: str
@@ -129,6 +126,9 @@ class ConfigModel(BaseModel):
     cookie: str
     pushplus: str = ""
     remark: str = "自动签到配置"
+    enable_time_range: bool = False  # 是否启用时间段控制
+    start_time: str = "08:00"
+    end_time: str = "22:00"
 
     @field_validator('class_id')
     @classmethod
@@ -187,13 +187,24 @@ class ConfigModel(BaseModel):
 
     @field_validator('time')
     @classmethod
-    def validate_search_time(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError("检索间隔必须为正整数")
-        return v
+    def validate_search_time(cls, v: str) -> int:
+        try:
+            v = int(v)
+            if v <= 0:
+                raise ValueError("检索间隔必须为正整数")
+            return v
+        except ValueError:
+            raise ValueError("检索间隔必须为有效的正整数")
 
+    @field_validator('start_time', 'end_time')
+    @classmethod
+    def validate_time_format(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, '%H:%M')
+            return v
+        except ValueError:
+            raise ValueError("时间格式必须为 HH:MM")
 
-# 定义配置管理器类
 class ConfigManager:
     def __init__(self, storage: ConfigStorageInterface, logger: LoggerInterface):
         self.storage = storage
@@ -211,7 +222,6 @@ class ConfigManager:
     def _load_config(self) -> Dict[str, Any]:
         try:
             raw_config = self.storage.load()
-            # 如果配置文件存在，进入正常的加载和验证流程
             config = {
                 "class_id": raw_config.get("class_id") or raw_config.get("class", ""),
                 "lat": raw_config.get("lat", ""),
@@ -220,7 +230,10 @@ class ConfigManager:
                 "time": raw_config.get("time", AppConstants.DEFAULT_SEARCH_INTERVAL),
                 "cookie": raw_config.get("cookie", ""),
                 "pushplus": raw_config.get("pushplus", ""),
-                "remark": raw_config.get("remark", "自动签到配置")
+                "remark": raw_config.get("remark", "自动签到配置"),
+                "enable_time_range": raw_config.get("enable_time_range", AppConstants.DEFAULT_RUN_TIME['enable_time_range']),
+                "start_time": raw_config.get("start_time", AppConstants.DEFAULT_RUN_TIME['start_time']),
+                "end_time": raw_config.get("end_time", AppConstants.DEFAULT_RUN_TIME['end_time'])
             }
 
             try:
@@ -229,15 +242,8 @@ class ConfigManager:
                 self._handle_validation_error(e)
                 return {}
         except FileNotFoundError:
-            # 创建新的空配置文件
             self.storage.save({})
-            # 导入 ConfigUpdater 类
-            from .main import ConfigUpdater
-            # 初始化 ConfigUpdater 并调用 init_config 方法
-            updater = ConfigUpdater(self, self.logger)
-            new_config = updater.init_config()
-            # 对于新创建的配置文件，直接返回，跳过验证
-            return new_config
+            return {}
 
     def _handle_validation_error(self, error: ValidationError) -> None:
         error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in error.errors()]
@@ -250,8 +256,244 @@ class ConfigManager:
         except ValueError as e:
             self.logger.log(f"保存配置时出错: {e}", LogLevel.ERROR)
 
+# === 扫码登录系统 ===
+class QRLoginSystem:
+    def __init__(self):
+        self.base_url = 'http://k8n.cn/weixin/qrlogin/student'
+        self.headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Cache-Control': 'max-age=0',
+            'Host': 'k8n.cn',
+            'Proxy-Connection': 'keep-alive',
+            'Referer': 'http://k8n.cn/student/login?ref=%2Fstudent',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+        }
+        self.session = requests.Session()
+        self.max_attempts = 20
+        self.check_interval = 2
+        self.classid = None
 
-# 定义配置更新器类
+    def fetch_qr_code_url(self):
+        print("正在获取二维码链接...")
+        try:
+            response = self.session.get(self.base_url, headers=self.headers)
+            if response.status_code == 200:
+                pattern = r'https://mp.weixin.qq.com/cgi-bin/showqrcode\?ticket=[^"]+'
+                match = re.search(pattern, response.text)
+                if match:
+                    qr_code_url = match.group(0)
+                    print(f"成功获取二维码链接: {qr_code_url}")
+                    return qr_code_url
+        except requests.RequestException as e:
+            print(f"获取二维码链接出错: {e}")
+        print("未找到二维码链接")
+        return None
+
+    def display_qr_code(self, qr_code_url):
+        print("准备显示二维码...")
+        try:
+            response = self.session.get(qr_code_url)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
+                img = img.resize((260, 260), Image.LANCZOS)
+
+                root = tk.Tk()
+                root.title("微信登录二维码")
+                window_width = 320
+                window_height = 400
+                root.geometry(f"{window_width}x{window_height}")
+                root.resizable(False, False)
+                root.geometry("+100+100")
+                root.attributes('-topmost', True)
+                root.after(10, lambda: root.attributes('-topmost', True))
+
+                main_frame = tk.Frame(root, padx=20, pady=20)
+                main_frame.pack(expand=True, fill=tk.BOTH)
+
+                photo = ImageTk.PhotoImage(img)
+                img_frame = tk.Frame(main_frame, bd=2, relief=tk.GROOVE)
+                img_frame.pack(pady=(0, 15))
+                tk.Label(img_frame, image=photo).pack(padx=5, pady=5)
+
+                tk.Label(
+                    main_frame,
+                    text="请使用微信扫描二维码登录",
+                    font=("Microsoft YaHei", 12),
+                    fg="#333"
+                ).pack(pady=(0, 10))
+
+                tk.Label(
+                    main_frame,
+                    text="拖动标题栏可移动窗口",
+                    font=("Microsoft YaHei", 9),
+                    fg="#666"
+                ).pack()
+
+                main_frame.image = photo
+
+                def start_move(event):
+                    root.x = event.x
+                    root.y = event.y
+
+                def stop_move(event):
+                    root.x = None
+                    root.y = None
+
+                def do_move(event):
+                    x = root.winfo_x() + (event.x - root.x)
+                    y = root.winfo_y() + (event.y - root.y)
+                    root.geometry(f"+{x}+{y}")
+
+                main_frame.bind("<ButtonPress-1>", start_move)
+                main_frame.bind("<ButtonRelease-1>", stop_move)
+                main_frame.bind("<B1-Motion>", do_move)
+
+                root.after(100, root.focus_force)
+                root.after(0, self.check_login_status, root, 0)
+                root.mainloop()
+                return True
+            else:
+                print("无法显示二维码，请手动复制以下URL到浏览器:")
+                print(qr_code_url)
+        except Exception as e:
+            print(f"发生错误: {e}")
+            print("请手动复制以下URL到浏览器:")
+            print(qr_code_url)
+        return False
+
+    def check_login_status(self, root, attempt):
+        if attempt >= self.max_attempts:
+            print("超过最大尝试次数，登录检查失败")
+            root.destroy()
+            return False
+        check_url = f"{self.base_url}?op=checklogin"
+        try:
+            response = self.session.get(check_url, headers=self.headers)
+            print(f"第 {attempt + 1} 次检查登录状态，状态码: {response.status_code}")
+            data = response.json()
+            if data.get('status'):
+                print("登录成功")
+                self.handle_successful_login(response, data)
+                root.destroy()
+                return True
+        except Exception as e:
+            print(f"第 {attempt + 1} 次登录检查出错: {str(e)}")
+        root.after(self.check_interval * 1000, self.check_login_status, root, attempt + 1)
+        return None
+
+    def handle_successful_login(self, initial_response, data):
+        print("处理登录成功后的操作...")
+        self.extract_and_set_cookies(initial_response)
+        new_url = 'https://k8n.cn' + data['url']
+        self.send_follow_up_request(new_url)
+        cookies = self.get_required_cookies()
+        print(f"获取到Cookies: {cookies}")
+
+    def extract_and_set_cookies(self, response):
+        set_cookies = response.headers.get('Set-Cookie')
+        if set_cookies:
+            if isinstance(set_cookies, str):
+                set_cookies = [set_cookies]
+            for set_cookie in set_cookies:
+                pattern = r'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d=([^;]+)'
+                match = re.search(pattern, set_cookie)
+                if match:
+                    cookie_value = match.group(1)
+                    print(f"提取到Cookie: {cookie_value}")
+
+    def send_follow_up_request(self, url):
+        print("发送跟进请求...")
+        try:
+            response = self.session.get(url, headers=self.headers)
+            self.extract_and_set_cookies(response)
+        except requests.RequestException as e:
+            print(f"跟进请求出错: {e}")
+
+    def get_required_cookies(self):
+        cookies = self.session.cookies.get_dict()
+        return {
+            'remember_student': cookies.get("remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d")
+        }
+
+    def fetch_logged_in_data(self):
+        print("获取登录后数据...")
+        data_url = 'http://k8n.cn/student'
+        try:
+            response = self.session.get(data_url, headers=self.headers)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                class_info_list = []
+                for card in soup.find_all('div', class_='card mb-3 course'):
+                    course_id = card.get('course_id')
+                    if course_id:
+                        course_name = card.find('h5', class_='course_name').text.strip() if card.find('h5', class_='course_name') else "未知课程名称"
+                        class_name = card.find('p', style="color: #fff").text.strip() if card.find('p', style="color: #fff") else "未知班级名称"
+                        class_code = card.find('span', style="float: right").text.split(' ')[-1].strip() if card.find('span', style="float: right") else "未知班级码"
+
+                        class_info_list.append({
+                            '课程 ID': course_id,
+                            '班级名称': class_name,
+                            '课程名称': course_name,
+                            '班级码': class_code
+                        })
+                    else:
+                        print("未找到有效的 course_id 属性")
+
+                if not class_info_list:
+                    print("未找到任何班级信息")
+                    return {"status": "error"}
+                else:
+                    print("班级信息：")
+                    for idx, info in enumerate(class_info_list, start=1):
+                        print(f"  班级 {idx}: 课程 ID: {info['课程 ID']} 班级名称: {info['班级名称']} 课程名称: {info['课程名称']} 班级码: {info['班级码']}")
+
+                    all_classids = [info['课程 ID'] for info in class_info_list]
+                    print(f"所有 classid: {all_classids}")
+
+                    if len(all_classids) == 0:
+                        print("未找到有效的 classid")
+                        return {"status": "error"}
+                    elif len(all_classids) == 1:
+                        self.classid = all_classids[0]
+                        print(f"自动选择 classid: {self.classid}")
+                    else:
+                        while True:
+                            try:
+                                print("请选择要使用的 classid：")
+                                for idx, classid in enumerate(all_classids, start=1):
+                                    print(f"{idx}. {classid}")
+                                choice = int(input("请输入对应的序号: ")) - 1
+                                if 0 <= choice < len(all_classids):
+                                    self.classid = all_classids[choice]
+                                    print(f"已选择 classid: {self.classid}")
+                                    scanned_cookie = self.session.cookies.get('remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d')
+                                    if scanned_cookie:
+                                        scanned_cookie = f"remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d={scanned_cookie}"
+                                        if len(scanned_cookie) > 20:
+                                            displayed_cookie = f"{scanned_cookie[:10]}...{scanned_cookie[-10:]}"
+                                        else:
+                                            displayed_cookie = scanned_cookie
+                                            print(f"扫码获取成功")
+                                        print(f"配置的 cookie: {displayed_cookie}")
+                                    print(f"配置的 classid: {self.classid}")
+                                    break
+                                else:
+                                    print("输入的序号无效")
+                            except ValueError:
+                                print("输入无效，请输入数字")
+
+                    return {"status": "success", "classid": self.classid}
+            else:
+                print(f"请求失败，状态码: {response.status_code}")
+                return {"status": "error"}
+        except requests.RequestException as e:
+            print(f"获取数据出错: {e}")
+            return {"status": "error"}
+
+# === 配置更新器 ===
 class ConfigUpdater:
     def __init__(self, config_manager: ConfigManager, logger: LoggerInterface):
         self.manager = config_manager
@@ -262,7 +504,7 @@ class ConfigUpdater:
 
     def init_config(self) -> Dict[str, Any]:
         if not self.manager.config or not self._validate_config():
-            self.logger.log("当前配置无效，需要重新配置", LogLevel.ERROR)
+            self.logger.log("配置无效，需要重新配置", LogLevel.ERROR)
             return self._update_config_interactively()
 
         self._show_current_config()
@@ -286,116 +528,169 @@ class ConfigUpdater:
     def _show_current_config(self) -> None:
         self.logger.log("---------- 当前配置信息 ----------", LogLevel.INFO)
         for key, value in self.manager.config.items():
-            display_value = value if key != "cookie" else "[已隐藏]"
+            display_value = value if key not in ["cookie", "pushplus"] else "[已隐藏]"
             self.logger.log(f"{key}: {display_value}", LogLevel.INFO)
         self.logger.log("--------------------------------", LogLevel.INFO)
 
-    def _should_update_config(self) -> bool:
+    def _get_user_choice_with_timeout(self, prompt: str, choices: Tuple[str, ...], 
+                                   default: Optional[str] = None, 
+                                   timeout: int = 10) -> str:
+        """
+        Windows专用带超时的用户选择输入
+        :param prompt: 提示信息
+        :param choices: 可选值列表
+        :param default: 默认值
+        :param timeout: 超时时间(秒)
+        :return: 用户选择或默认值
+        """
+        print(prompt, end='', flush=True)
+        start_time = time.time()
+        
         while True:
-            choice = input("当前配置有效。是否修改配置？(y/n, 默认n): ").strip().lower()
-            if choice in ('', 'n'):
-                return False
-            if choice == 'y':
-                return True
-            print(f"\033[31m请输入 y 或 n\033[0m")
+            # 检查是否有按键输入
+            if msvcrt.kbhit():
+                char = msvcrt.getwch().lower()  # 获取输入字符并转为小写
+                if char in choices:
+                    print(char)  # 回显用户输入
+                    return char
+                elif char == '\r' and default:  # 回车键使用默认值
+                    print(default)
+                    return default
+            
+            # 检查是否超时
+            if time.time() - start_time > timeout:
+                print(f"\n{Fore.YELLOW}输入超时，自动选择默认值 '{default}'{Style.RESET_ALL}")
+                return default
+            
+            time.sleep(0.1)  # 避免CPU占用过高
+
+    def _should_update_config(self) -> bool:
+        """Windows专用：检查是否需要更新配置，10秒无输入默认返回False"""
+        return self._get_user_choice_with_timeout(
+            "当前配置有效。是否修改配置？(y/n, 默认n): ",
+            ('y', 'n'),
+            default='n',
+            timeout=10
+        ) == 'y'
+
+    def _update_time_range_setting(self) -> None:
+        """更新时间段控制设置"""
+        current_setting = self.manager.config.get('enable_time_range', False)
+        print(f"\n当前时间段控制状态: {'已启用' if current_setting else '已禁用'}")
+        
+        if self._get_user_choice("是否修改时间段控制? (y/n, 默认n): ", ('y', 'n'), default='n') == 'y':
+            enable = self._get_user_choice("启用时间段控制? (y/n, 默认n): ", ('y', 'n'), default='n') == 'y'
+            self.manager.config['enable_time_range'] = enable
+            
+            if enable:
+                self._update_field("start_time", ConfigModel.validate_time_format)
+                self._update_field("end_time", ConfigModel.validate_time_format)
+                print(f"已设置运行时间段: {self.manager.config['start_time']} 至 {self.manager.config['end_time']}")
+            else:
+                print("已禁用时间段控制，程序将全天候运行")
 
     def _update_config_interactively(self) -> Dict[str, Any]:
         self.logger.log("开始交互式配置更新", LogLevel.INFO)
-        while True:
-            success = self._update_cookie_and_class_id()
-            if success:
-                break
-            retry = input("未获取到有效的 cookie 或 class_id，是否重试？(y/n): ").strip().lower()
-            if retry != 'y':
-                break
-        self._update_coordinates()
-        self._update_search_interval()
-        self._update_pushplus()
-        self._update_remark()
+        original_config = deepcopy(self.manager.config)
+        
+        try:
+            self._update_cookie_and_class_id()
+            self._update_coordinates()
+            self._update_search_interval()
+            self._update_pushplus()
+            self._update_remark()
+            self._update_time_range_setting()  # 更新时间段控制设置
 
-        if self._validate_config():
-            self.manager.save()
-            return self.manager.config
+            self._show_current_config()
+            if self._get_user_choice("确认保存配置? (y/n, 默认y): ", ('y', 'n'), default='y') != 'y':
+                self.manager.config = original_config
+                return self._update_config_interactively()
 
-        self.logger.log("配置仍无效，请重新输入", LogLevel.ERROR)
-        return self._update_config_interactively()
+            try:
+                ConfigModel(**self.manager.config)
+                self.manager.save()
+                return self.manager.config
+            except ValidationError as e:
+                self._handle_validation_error(e)
+                return self._update_config_interactively()
+        except Exception as e:
+            self.manager.config = original_config
+            raise
 
-    def _get_user_input(self, prompt: str, required: bool = False) -> str:
+    def _get_user_input(self, prompt: str, validator: Callable[[str], Any], required: bool = False) -> str:
         while True:
             try:
-                sys.stdin.flush()
                 value = input(prompt).strip()
                 if required and not value:
                     raise ValueError("该字段为必填项")
+                if value:
+                    return validator(value)
                 return value
             except ValueError as e:
                 self.logger.log(f"{e}，请重新输入", LogLevel.ERROR)
             except (EOFError, KeyboardInterrupt):
                 self.logger.log("\n输入中断，请重新输入", LogLevel.ERROR)
 
-    def _update_cookie_and_class_id(self) -> bool:
+    def _get_user_choice(self, prompt: str, choices: Tuple[str, ...], default: Optional[str] = None) -> str:
+        while True:
+            choice = input(prompt).strip().lower()
+            if not choice and default:
+                return default
+            if choice in choices:
+                return choice
+            print(f"\033[31m请输入 {' 或 '.join(choices)}\033[0m")
+
+    def _update_cookie_and_class_id(self):
         current_cookie = self.manager.config.get("cookie", "")
         current_class_id = self.manager.config.get("class_id", "")
 
         if not current_cookie or not current_class_id:
-            if self._ask_scan_choice("当前 cookie 或 class_id 无效或缺失，是否通过扫码获取？(y/n, 默认n): "):
-                success = self._scan_and_update()
-                if success:
-                    return True
-                else:
-                    return False
-            else:
+            message = "当前 cookie 或 class_id 无效或缺失，选择获取方式：(1. 扫码, 2. 手动输入, 默认扫码): "
+        elif self._ask_update_choice(current_cookie, current_class_id):
+            message = "选择获取方式：(1. 扫码, 2. 手动输入, 默认扫码): "
+        else:
+            return
+
+        choice = self._get_user_choice(message, ('1', '2'), default='1')
+        if choice == '1':
+            success = self._scan_and_update()
+            if not success:
+                print("扫码获取失败，将进行手动输入。")
                 self._update_required_fields()
         else:
-            if self._ask_update_choice(current_cookie, current_class_id):
-                if self._ask_scan_choice("是否通过扫码获取？(y/n, 默认n): "):
-                    success = self._scan_and_update()
-                    if success:
-                        return True
-                    else:
-                        return False
-                else:
-                    self._update_required_fields()
-        return True
-
-    def _ask_scan_choice(self, prompt: str) -> bool:
-        choice = input(prompt).strip().lower()
-        return choice == 'y'
+            self._update_required_fields()
 
     def _ask_update_choice(self, current_cookie: str, current_class_id: str) -> bool:
         display_cookie = current_cookie if not current_cookie else "[已隐藏]"
         display_class_id = current_class_id
-        while True:
-            choice = input(f"当前 cookie 为: {display_cookie}，class_id 为: {display_class_id}，是否修改？(y/n, 默认n): ").strip().lower()
-            if choice in ('', 'n'):
-                return False
-            if choice == 'y':
-                return True
-            print(f"\033[31m请输入 y 或 n\033[0m")
+        return self._get_user_choice(f"当前 cookie 为: {display_cookie}，class_id 为: {display_class_id}，是否修改？(y/n, 默认n): ", ('y', 'n'), default='n') == 'y'
 
-    def _scan_and_update(self) -> bool:
-        qr_url = self.login_system.fetch_qr_code_url()
-        if qr_url:
-            success = self.login_system.display_qr_code(qr_url)
-            if success:
-                # 创建一个虚拟的 root 对象，因为这里只是为了调用 check_login_status 传递参数
-                root = tk.Tk()
-                root.withdraw()  # 隐藏窗口
-                login_result = self.login_system.check_login_status(root, 0)
-                root.destroy()
-                if login_result:
-                    result = self.login_system.fetch_logged_in_data()
-                    if result["status"] == "success":
-                        self.scanned_cookie = self.login_system.session.cookies.get(
-                            'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d')
-                        if not self.scanned_cookie:
-                            return False
-                        self.scanned_cookie = f"remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d={self.scanned_cookie}"
-                        self.scanned_class_ids = [self.login_system.classid]
-                        selected_class_id = self._select_class_id()
-                        self.manager.config["class_id"] = selected_class_id
-                        self.manager.config["cookie"] = self.scanned_cookie
-                        return True
+    def _scan_and_update(self):
+        for attempt in range(1, 4):
+            try:
+                qr_url = self.login_system.fetch_qr_code_url()
+                if not qr_url:
+                    continue
+                    
+                if not self.login_system.display_qr_code(qr_url):
+                    continue
+                    
+                result = self.login_system.fetch_logged_in_data()
+                if result["status"] == "success":
+                    self.scanned_cookie = self.login_system.session.cookies.get(
+                        'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d')
+                    self.scanned_cookie = f"remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d={self.scanned_cookie}"
+                    self.scanned_class_ids = [self.login_system.classid]
+                    selected_class_id = self._select_class_id()
+                    self.manager.config["class_id"] = selected_class_id
+                    self.manager.config["cookie"] = self.scanned_cookie
+                    return True
+            except Exception as e:
+                self.logger.log(f"第 {attempt} 次扫码尝试失败: {e}", LogLevel.ERROR)
+                
+            if attempt < 3:
+                if self._get_user_choice("扫码未成功，是否重试? (y/n): ", ('y', 'n')) != 'y':
+                    break
         return False
 
     def _select_class_id(self) -> str:
@@ -406,23 +701,8 @@ class ConfigUpdater:
         self._update_field("class_id", ConfigModel.validate_class_id, is_required=True)
 
     def _update_field(self, field: str, validator: Callable[[str], Any], is_required: bool = False) -> None:
-        current_value = self.manager.config.get(field, "")
-        while True:
-            new_value = self._get_user_input(
-                f"请输入 {field}{' [必填]' if is_required else ''}: ",
-                required=is_required
-            )
-            if not is_required and not new_value:
-                self.manager.config[field] = ""
-                break
-            try:
-                if field == "time":
-                    new_value = int(new_value)
-                validated_value = validator(new_value)
-                self.manager.config[field] = validated_value
-                break
-            except ValueError as e:
-                self.logger.log(f"{field} 验证失败: {e}", LogLevel.ERROR)
+        prompt = f"请输入 {field}{' [必填]' if is_required else ''}: "
+        self.manager.config[field] = self._get_user_input(prompt, validator, required=is_required)
 
     def _update_coordinates(self) -> None:
         self._update_field("lat", ConfigModel.validate_latitude, is_required=True)
@@ -438,28 +718,95 @@ class ConfigUpdater:
     def _update_remark(self) -> None:
         self._update_field("remark", lambda x: x)
 
-
-# 定义签到任务类
+# === 签到任务 ===
 class SignTask:
     def __init__(self, config: Dict[str, Any], logger: LoggerInterface):
         self.config = config
         self.logger = logger
         self.invalid_sign_ids: Set[str] = set()
         self.signed_ids: Set[str] = set()
+        self._running = True
+        self._control_thread = None
 
     def run(self) -> None:
-        if not self._check_login():
-            self.logger.log("未登录，无法开始签到任务，请先登录。", LogLevel.ERROR)
-            return
-        while True:
-            self._execute_sign_cycle()
-            self._wait_for_next_cycle()
+        self._setup_control_thread()
+        
+        try:
+            while self._running:
+                if self._should_run_now():
+                    self._execute_sign_cycle()
+                else:
+                    self._log_waiting_message()
+                
+                self._wait_for_next_cycle()
+        except KeyboardInterrupt:
+            self.logger.log("用户中断程序", LogLevel.INFO)
+        finally:
+            self._cleanup_control_thread()
 
-    def _check_login(self) -> bool:
-        return bool(self.config.get("cookie"))
+    def _should_run_now(self) -> bool:
+        """检查当前是否应该运行签到任务"""
+        if not self.config.get('enable_time_range', False):
+            return True  # 如果未启用时间段控制，则始终返回True
+            
+        try:
+            now = datetime.now()
+            current_time = now.strftime('%H:%M')
+            
+            start_time = self.config.get('start_time', '08:00')
+            end_time = self.config.get('end_time', '22:00')
+            
+            return start_time <= current_time <= end_time
+        except Exception as e:
+            self.logger.log(f"检查时间段出错: {e}", LogLevel.ERROR)
+            return True  # 出错时默认允许运行
+
+    def _log_waiting_message(self) -> None:
+        """记录等待日志"""
+        current_time = datetime.now().strftime('%H:%M')
+        start_time = self.config.get('start_time', '08:00')
+        end_time = self.config.get('end_time', '22:00')
+        self.logger.log(
+            f"当前时间 {current_time} 不在运行时间段内 ({start_time}-{end_time})，等待中...",
+            LogLevel.INFO
+        )
+
+    def _setup_control_thread(self):
+        self._control_thread = threading.Thread(
+            target=self._monitor_commands,
+            daemon=True
+        )
+        self._control_thread.start()
+
+    def _monitor_commands(self):
+        while self._running:
+            try:
+                cmd = input("输入命令 (q=退出, s=立即签到, c=检查状态): \n").strip().lower()
+                if cmd == 'q':
+                    self._running = False
+                elif cmd == 's':
+                    self._execute_sign_cycle()
+                elif cmd == 'c':
+                    self._show_status()
+            except (EOFError, KeyboardInterrupt):
+                continue
+
+    def _show_status(self):
+        print(f"\n{Fore.CYAN}=== 当前状态 ==={Style.RESET_ALL}")
+        print(f"已签到ID: {self.signed_ids}")
+        print(f"无效签到ID: {self.invalid_sign_ids}")
+        if self.config.get('enable_time_range', False):
+            print(f"运行时间段: {self.config.get('start_time', '08:00')} 至 {self.config.get('end_time', '22:00')}")
+        else:
+            print("运行时间段: 全天候运行")
+        print(f"下次检查: {datetime.now() + timedelta(seconds=self.config.get('time', 60))}")
+
+    def _cleanup_control_thread(self):
+        if self._control_thread and self._control_thread.is_alive():
+            self._control_thread.join(timeout=1)
 
     def _execute_sign_cycle(self) -> None:
-        self.logger.log(f"开始检索签到任务，当前时间: {datetime.now()}", LogLevel.INFO)
+        self.logger.log(f"开始检索签到任务，当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", LogLevel.INFO)
 
         try:
             sign_ids = self._fetch_sign_ids()
@@ -601,266 +948,68 @@ class SignTask:
             net_type=random.choice(net_types)
         )
 
-    def _wait_for_next_cycle(self) -> None:
+    def _wait_for_next_cycle(self) -> bool:
         interval = self.config.get("time", AppConstants.DEFAULT_SEARCH_INTERVAL)
         self.logger.log(f"等待下次检索，间隔: {interval}秒", LogLevel.INFO)
-        time.sleep(interval)
+        
+        start_time = time.time()
+        while time.time() - start_time < interval and self._running:
+            time.sleep(1)
+            if not self._running:
+                return False
+        return True
 
-
-class QRLoginSystem:
-    def __init__(self):
-        self.base_url = 'http://k8n.cn/weixin/qrlogin/student'
-        self.headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Encoding': 'gzip, deflate',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Cache-Control': 'max-age=0',
-            'Host': 'k8n.cn',
-            'Proxy-Connection': 'keep-alive',
-            'Referer': 'http://k8n.cn/student/login?ref=%2Fstudent',
-            'Upgrade-Insecure-Requests': '1',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
-        }
-        self.session = requests.Session()
-        self.max_attempts = 20
-        self.check_interval = 2
-
-    def fetch_qr_code_url(self):
-        print("正在努力为您获取二维码链接，请稍候...")
-        try:
-            response = self.session.get(self.base_url, headers=self.headers)
-            if response.status_code == 200:
-                pattern = r'https://mp.weixin.qq.com/cgi-bin/showqrcode\?ticket=[^"]+'
-                match = re.search(pattern, response.text)
-                if match:
-                    qr_code_url = match.group(0)
-                    print(f"太棒啦！成功为您获取到二维码链接: {qr_code_url}")
-                    return qr_code_url
-        except requests.RequestException as e:
-            print(f"哎呀，获取二维码链接时出问题啦: {e}")
-        print("很遗憾，没有找到二维码链接呢。")
-        return None
-
-    def display_qr_code(self, qr_code_url):
-        print("正在为您准备登录二维码，请稍候...")
-        try:
-            response = self.session.get(qr_code_url)
-            if response.status_code == 200:
-                img = Image.open(BytesIO(response.content))
-                img = img.resize((260, 260), Image.LANCZOS)
-
-                root = tk.Tk()
-                root.title("微信登录二维码")
-
-                # 固定窗口大小
-                window_width = 320
-                window_height = 400
-                root.geometry(f"{window_width}x{window_height}")
-                root.resizable(False, False)
-
-                # 强制窗口出现在固定位置（距离左上角100,100）
-                root.geometry("+100+100")
-
-                # 确保窗口显示在最前面（分两步操作更可靠）
-                root.attributes('-topmost', True)
-                root.after(10, lambda: root.attributes('-topmost', True))
-
-                # 主框架
-                main_frame = tk.Frame(root, padx=20, pady=20)
-                main_frame.pack(expand=True, fill=tk.BOTH)
-
-                # 二维码图片
-                photo = ImageTk.PhotoImage(img)
-                img_frame = tk.Frame(main_frame, bd=2, relief=tk.GROOVE)
-                img_frame.pack(pady=(0, 15))
-                tk.Label(img_frame, image=photo).pack(padx=5, pady=5)
-
-                # 提示文字
-                tk.Label(
-                    main_frame,
-                    text="请使用微信扫描二维码登录",
-                    font=("Microsoft YaHei", 12),
-                    fg="#333"
-                ).pack(pady=(0, 10))
-
-                # 辅助提示
-                tk.Label(
-                    main_frame,
-                    text="拖动标题栏可移动窗口",
-                    font=("Microsoft YaHei", 9),
-                    fg="#666"
-                ).pack()
-
-                # 保持图片引用
-                main_frame.image = photo
-
-                # 实现窗口拖动功能（通过绑定整个窗口）
-                def start_move(event):
-                    root.x = event.x
-                    root.y = event.y
-
-                def stop_move(event):
-                    root.x = None
-                    root.y = None
-
-                def do_move(event):
-                    x = root.winfo_x() + (event.x - root.x)
-                    y = root.winfo_y() + (event.y - root.y)
-                    root.geometry(f"+{x}+{y}")
-
-                # 绑定到主框架实现拖动
-                main_frame.bind("<ButtonPress-1>", start_move)
-                main_frame.bind("<ButtonRelease-1>", stop_move)
-                main_frame.bind("<B1-Motion>", do_move)
-
-                # 强制获取焦点
-                root.after(100, root.focus_force)
-
-                self.login_success = False
-                root.after(0, self.check_login_status, root, 0)
-                root.mainloop()
-                return True
-            else:
-                print("无法显示二维码，请手动复制以下URL到浏览器:")
-                print(qr_code_url)
-        except Exception as e:
-            print(f"发生错误: {e}")
-            print("请手动复制以下URL到浏览器:")
-            print(qr_code_url)
-        return False
-
-    def check_login_status(self, root, attempt):
-        if attempt >= self.max_attempts:
-            print("很可惜，已经超过最大尝试次数，登录检查失败啦。")
-            root.destroy()
-            return False
-        check_url = f"{self.base_url}?op=checklogin"
-        try:
-            response = self.session.get(check_url, headers=self.headers)
-            print(f"第 {attempt + 1} 次尝试检查登录状态，状态码是 {response.status_code} 哦。")
-            data = response.json()
-            if data.get('status'):
-                print("哇塞，您已成功登录啦！")
-                self.handle_successful_login(response, data)
-                self.login_success = True
-                root.destroy()
-                return True
-        except Exception as e:
-            print(f"哎呀，第 {attempt + 1} 次登录检查尝试失败啦: {str(e)}")
-        root.after(self.check_interval * 1000, self.check_login_status, root, attempt + 1)
-        return False
-
-    def handle_successful_login(self, initial_response, data):
-        print("正在为您处理登录后的相关操作，请稍等...")
-        self.extract_and_set_cookies(initial_response)
-        new_url = 'https://k8n.cn' + data['url']
-        self.send_follow_up_request(new_url)
-        cookies = self.get_required_cookies()
-        print(f"成功为您获取到关键 Cookies: {cookies}")
-
-    def extract_and_set_cookies(self, response):
-        set_cookies = response.headers.get('Set-Cookie')
-        if set_cookies:
-            if isinstance(set_cookies, str):
-                set_cookies = [set_cookies]
-            for set_cookie in set_cookies:
-                pattern = r'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d=([^;]+)'
-                match = re.search(pattern, set_cookie)
-                if match:
-                    cookie_value = match.group(1)
-                    print(f"成功提取到 Cookie: {cookie_value}")
-
-    def send_follow_up_request(self, url):
-        print("正在发送登录后的跟进请求，请稍等片刻...")
-        try:
-            response = self.session.get(url, headers=self.headers)
-            self.extract_and_set_cookies(response)
-        except requests.RequestException as e:
-            print(f"哎呀，跟进请求出错啦: {e}")
-
-    def get_required_cookies(self):
-        cookies = self.session.cookies.get_dict()
-        return {
-            'remember_student': cookies.get("remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d")
-        }
-
-    def fetch_logged_in_data(self):
-        if not self.login_success:
-            return {"status": "error", "message": "未成功登录，无法获取数据"}
-        data_url = 'http://k8n.cn/student'
-        try:
-            response = self.session.get(data_url, headers=self.headers)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-
-                # 提取班级信息
-                class_info_list = []
-                for card in soup.find_all('div', class_='card mb-3 course'):
-                    course_id = card.get('course_id')
-                    if course_id:
-                        course_name = card.find('h5', class_='course_name').text.strip() if card.find('h5', class_='course_name') else "未知课程名称"
-                        class_name = card.find('p', style="color: #fff").text.strip() if card.find('p', style="color: #fff") else "未知班级名称"
-                        class_code = card.find('span', style="float: right").text.split(' ')[-1].strip() if card.find('span', style="float: right") else "未知班级码"
-
-                        class_info_list.append({
-                            '课程 ID': course_id,
-                            '班级名称': class_name,
-                            '课程名称': course_name,
-                            '班级码': class_code
-                        })
-                    else:
-                        print("未找到有效的 course_id 属性")
-
-                if not class_info_list:
-                    print("未找到任何班级信息，请检查页面结构是否发生变化。")
-                    return {"status": "error"}
-                else:
-                    print("成功为您获取到登录后的数据啦！")
-                    print("班级信息：")
-                    for idx, info in enumerate(class_info_list, start=1):
-                        print(f"  班级 {idx}: 课程 ID: {info['课程 ID']} 班级名称: {info['班级名称']} 课程名称: {info['课程名称']} 班级码: {info['班级码']}")
-
-                    # 从班级信息中提取所有 classid
-                    all_classids = [info['课程 ID'] for info in class_info_list]
-                    print(f"所有 classid: {all_classids}")
-
-                    # 处理不同个数的 classid 情况
-                    if len(all_classids) == 0:
-                        print("未找到有效的 classid，请检查页面结构。")
-                        return {"status": "error"}
-                    elif len(all_classids) == 1:
-                        self.classid = all_classids[0]
-                        print(f"已自动选择唯一的 classid: {self.classid}")
-                    else:
-                        while True:
-                            try:
-                                print("请选择要使用的 classid：")
-                                for idx, classid in enumerate(all_classids, start=1):
-                                    print(f"{idx}. {classid}")
-                                choice = int(input("请输入对应的序号: ")) - 1
-                                if 0 <= choice < len(all_classids):
-                                    self.classid = all_classids[choice]
-                                    print(f"已选择 classid: {self.classid}")
-                                    break
-                                else:
-                                    print("输入的序号无效，请重新输入。")
-                            except ValueError:
-                                print("输入无效，请输入一个数字。")
-
-                    return {"status": "success", "classid": self.classid}
-            else:
-                print(f"请求登录后数据失败，状态码: {response.status_code}")
-                return {"status": "error"}
-        except requests.RequestException as e:
-            print(f"获取登录后数据时发生网络错误: {e}")
-            return {"status": "error"}
-
-
+# === 主程序入口 ===
 if __name__ == "__main__":
-    logger = FileLogger()
-    storage = JsonConfigStorage()
-    config_manager = ConfigManager(storage, logger)
-    updater = ConfigUpdater(config_manager, logger)
-    config = updater.init_config()
-    sign_task = SignTask(config, logger)
-    sign_task.run()
+    try:
+        # 初始化核心组件
+        logger = FileLogger("auto_check.log")
+        storage = JsonConfigStorage("data.json")
+        config_manager = ConfigManager(storage, logger)
+        
+        # 配置检查
+        if not config_manager.config or not all(
+            key in config_manager.config 
+            for key in AppConstants.REQUIRED_FIELDS
+        ):
+            logger.log("检测到无效或缺失的配置", LogLevel.WARNING)
+            print(f"{Fore.YELLOW}首次使用或配置不完整，需要初始化{Style.RESET_ALL}")
+            choice = input("是否现在进行配置初始化? (y/n, 默认y): ").strip().lower() or 'y'
+            if choice != 'y':
+                logger.log("用户取消配置初始化", LogLevel.INFO)
+                sys.exit(0)
+        
+        # 配置更新流程
+        updater = ConfigUpdater(config_manager, logger)
+        try:
+            config = updater.init_config()
+            if not config:
+                raise ValueError("配置初始化失败")
+            
+            # 显示当前时间段设置
+            if config.get('enable_time_range', False):
+                print(f"\n{Fore.CYAN}当前运行时间段: {config.get('start_time', '08:00')} 至 {config.get('end_time', '22:00')}{Style.RESET_ALL}")
+            else:
+                print(f"\n{Fore.CYAN}时间段控制: 已禁用 (程序将全天候运行){Style.RESET_ALL}")
+                
+        except Exception as e:
+            logger.log(f"配置初始化错误: {e}", LogLevel.ERROR)
+            sys.exit(1)
+        
+        # 启动签到任务
+        sign_task = SignTask(config=config, logger=logger)
+        print(f"\n{Fore.GREEN}=== 自动签到系统已启动 ==={Style.RESET_ALL}")
+        print("可用命令:")
+        print("  q - 退出程序")
+        print("  s - 立即执行签到检查")
+        print("  c - 显示当前状态\n")
+        
+        try:
+            sign_task.run()
+        except KeyboardInterrupt:
+            logger.log("用户手动终止程序", LogLevel.INFO)
+            sys.exit(0)
+            
+    except Exception as e:
+        logger.log(f"系统启动失败: {e}", LogLevel.ERROR)
+        sys.exit(1)

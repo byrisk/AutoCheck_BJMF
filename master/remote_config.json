@@ -1,15 +1,19 @@
 {
     "version": "1.2.0",
-    "disabled": false,
-    "message": "",
+    "authorized": true,
+    "reason": "",
     "announcements": [
         {
             "id": 1,
-            "title": "小青提示",
-            "content": "请确保使用最新版本以获得最佳体验",
-            "date": "2025-05-5"
+            "title": "📢 小青提示",
+            "content": "请确保使用最新版本以获得最佳体验\n\n• 修复已知定位问题\n• 优化签到稳定性",
+            "date": "2025-05-05",
+            "expiry": "2025-12-31",
+            "url": "https://github.com/byrisk/AutoCheck_BJMF/issues"
         }
     ],
-    "changelog": "",
-    "download_url": "https://github.com/byrisk/AutoCheck_BJMF/releases"
+    "changelog": "1.2.0 更新内容：\n- 新增远程公告功能\n- 修复时间范围控制的BUG",
+    "download_url": "https://github.com/byrisk/AutoCheck_BJMF/releases",
+    "force_update": false,
+    "valid_until": "2025-12-31"
 }

@@ -1,6 +1,6 @@
 {
     "version": "1.2.0",
-    "authorized": false,
+    "authorized": true,
     "reason": "不给用",
     "announcements": [
         {

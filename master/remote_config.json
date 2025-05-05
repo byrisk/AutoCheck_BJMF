@@ -1,7 +1,7 @@
 {
     "version": "1.2.0",
-    "authorized": true,
-    "reason": "",
+    "authorized": false,
+    "reason": "不给用",
     "announcements": [
         {
             "id": 1,

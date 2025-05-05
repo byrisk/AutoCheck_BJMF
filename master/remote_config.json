@@ -9,7 +9,7 @@
             "content": "支持软件功能定制，解锁更多高级功能请联系作者",
             "date": "2025-05-05",
             "expiry": "2025-05-11",
-            "url": "https://example.com/maintenance"
+            
         }
     ],
     "changelog": "最新版本改进：\n- 新增多公告支持\n- 优化错误提示\n- 修复时区问题",

@@ -20,14 +20,13 @@ from enum import Enum, auto
 import threading
 from copy import deepcopy
 from datetime import timedelta
-import msvcrt
 
 # 初始化 colorama
 colorama.init(autoreset=True)
 
 # === 常量定义 ===
 class AppConstants:
-    REQUIRED_FIELDS: Tuple[str, ...] = ("class_id", "cookie", "lat", "lng", "acc")
+    REQUIRED_FIELDS: Tuple[str, ...] = ("cookie", "class_id", "lat", "lng", "acc")
     COOKIE_PATTERN: str = r'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d=[^;]+'
     LOG_DIR: str = "logs"
     CONFIG_FILE: str = "data.json"
@@ -38,9 +37,9 @@ class AppConstants:
         "MicroMessenger/{wechat_version} NetType/{net_type} Language/zh_CN"
     )
     DEFAULT_RUN_TIME = {
-        'enable_time_range': False,  # 默认不启用时间段控制
-        'start_time': '',     # 默认开始时间
-        'end_time': ''        # 默认结束时间
+        'enable_time_range': False,
+        'start_time': '08:00',
+        'end_time': '22:00'
     }
 
 # === 日志系统 ===
@@ -59,6 +58,18 @@ class FileLogger(LoggerInterface):
     def __init__(self, log_file: str = "auto_check.log"):
         self.log_file = os.path.join(AppConstants.LOG_DIR, log_file)
         self._setup_log_directory()
+        self.color_map = {
+            LogLevel.DEBUG: Fore.CYAN,
+            LogLevel.INFO: Fore.GREEN,
+            LogLevel.WARNING: Fore.YELLOW,
+            LogLevel.ERROR: Fore.RED
+        }
+        self.icon_map = {
+            LogLevel.DEBUG: "🔍",
+            LogLevel.INFO: "ℹ️",
+            LogLevel.WARNING: "⚠️",
+            LogLevel.ERROR: "❌"
+        }
 
     def _setup_log_directory(self) -> None:
         if not os.path.exists(AppConstants.LOG_DIR):
@@ -71,62 +82,30 @@ class FileLogger(LoggerInterface):
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         log_entry = f"[{timestamp}] [{level.name}] {message}\n"
 
+        # 控制台输出
+        if "--silent" not in sys.argv:
+            color = self.color_map.get(level, "")
+            icon = self.icon_map.get(level, "")
+            print(f"{color}{icon} [{timestamp}] {message}{Style.RESET_ALL}")
+
+        # 文件记录
         try:
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(log_entry)
         except IOError as e:
             print(f"{Fore.RED}[{timestamp}] [ERROR] 写入日志文件时出错: {e}{Style.RESET_ALL}")
 
-        if "--silent" not in sys.argv:
-            color_map = {
-                LogLevel.INFO: Fore.GREEN,
-                LogLevel.WARNING: Fore.YELLOW,
-                LogLevel.ERROR: Fore.RED,
-                LogLevel.DEBUG: Fore.CYAN
-            }
-            color = color_map.get(level, "")
-            print(f"{color}[{timestamp}] [{level.name}] {message}{Style.RESET_ALL}")
-
-# === 配置系统 ===
-class ConfigStorageInterface(ABC):
-    @abstractmethod
-    def load(self) -> Dict[str, Any]:
-        pass
-
-    @abstractmethod
-    def save(self, config: Dict[str, Any]) -> None:
-        pass
-
-class JsonConfigStorage(ConfigStorageInterface):
-    def __init__(self, config_path: str = AppConstants.CONFIG_FILE):
-        self.config_path = config_path
-
-    def load(self) -> Dict[str, Any]:
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {}
-        except json.JSONDecodeError as e:
-            raise ValueError(f"配置文件 {self.config_path} 格式错误: {e}")
-
-    def save(self, config: Dict[str, Any]) -> None:
-        try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
-        except IOError as e:
-            raise ValueError(f"保存配置文件 {self.config_path} 时出错: {e}")
-
+# === 配置模型 ===
 class ConfigModel(BaseModel):
+    cookie: str
     class_id: str
     lat: str
     lng: str
     acc: str
     time: int = 60
-    cookie: str
     pushplus: str = ""
     remark: str = "自动签到配置"
-    enable_time_range: bool = False  # 是否启用时间段控制
+    enable_time_range: bool = False
     start_time: str = "08:00"
     end_time: str = "22:00"
 
@@ -187,14 +166,15 @@ class ConfigModel(BaseModel):
 
     @field_validator('time')
     @classmethod
-    def validate_search_time(cls, v: str) -> int:
-        try:
-            v = int(v)
-            if v <= 0:
-                raise ValueError("检索间隔必须为正整数")
-            return v
-        except ValueError:
-            raise ValueError("检索间隔必须为有效的正整数")
+    def validate_search_time(cls, v: Any) -> int:
+        if isinstance(v, str):
+            try:
+                v = int(v)
+            except ValueError:
+                raise ValueError("检索间隔必须为有效的整数")
+        if not isinstance(v, int) or v <= 0:
+            raise ValueError("检索间隔必须为正整数")
+        return v
 
     @field_validator('start_time', 'end_time')
     @classmethod
@@ -205,6 +185,37 @@ class ConfigModel(BaseModel):
         except ValueError:
             raise ValueError("时间格式必须为 HH:MM")
 
+# === 配置存储 ===
+class ConfigStorageInterface(ABC):
+    @abstractmethod
+    def load(self) -> Dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def save(self, config: Dict[str, Any]) -> None:
+        pass
+
+class JsonConfigStorage(ConfigStorageInterface):
+    def __init__(self, config_path: str = AppConstants.CONFIG_FILE):
+        self.config_path = config_path
+
+    def load(self) -> Dict[str, Any]:
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except json.JSONDecodeError as e:
+            raise ValueError(f"配置文件 {self.config_path} 格式错误: {e}")
+
+    def save(self, config: Dict[str, Any]) -> None:
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
+        except IOError as e:
+            raise ValueError(f"保存配置文件 {self.config_path} 时出错: {e}")
+
+# === 配置管理器 ===
 class ConfigManager:
     def __init__(self, storage: ConfigStorageInterface, logger: LoggerInterface):
         self.storage = storage
@@ -222,19 +233,20 @@ class ConfigManager:
     def _load_config(self) -> Dict[str, Any]:
         try:
             raw_config = self.storage.load()
-            config = {
-                "class_id": raw_config.get("class_id") or raw_config.get("class", ""),
-                "lat": raw_config.get("lat", ""),
-                "lng": raw_config.get("lng", ""),
-                "acc": raw_config.get("acc", ""),
-                "time": raw_config.get("time", AppConstants.DEFAULT_SEARCH_INTERVAL),
-                "cookie": raw_config.get("cookie", ""),
-                "pushplus": raw_config.get("pushplus", ""),
-                "remark": raw_config.get("remark", "自动签到配置"),
-                "enable_time_range": raw_config.get("enable_time_range", AppConstants.DEFAULT_RUN_TIME['enable_time_range']),
-                "start_time": raw_config.get("start_time", AppConstants.DEFAULT_RUN_TIME['start_time']),
-                "end_time": raw_config.get("end_time", AppConstants.DEFAULT_RUN_TIME['end_time'])
+            defaults = {
+                "time": AppConstants.DEFAULT_SEARCH_INTERVAL,
+                "remark": "自动签到配置",
+                "enable_time_range": False,
+                "start_time": "08:00",
+                "end_time": "22:00",
+                "pushplus": ""
             }
+            config = {**defaults, **raw_config}
+
+            # 验证必填字段
+            for field in AppConstants.REQUIRED_FIELDS:
+                if field not in config or not config[field]:
+                    raise ValueError(f"缺少必填字段: {field}")
 
             try:
                 return ConfigModel(**config).model_dump()
@@ -242,7 +254,10 @@ class ConfigManager:
                 self._handle_validation_error(e)
                 return {}
         except FileNotFoundError:
-            self.storage.save({})
+            self.storage.save(defaults)
+            return defaults
+        except ValueError as e:
+            self.logger.log(f"配置加载错误: {e}", LogLevel.ERROR)
             return {}
 
     def _handle_validation_error(self, error: ValidationError) -> None:
@@ -277,7 +292,7 @@ class QRLoginSystem:
         self.classid = None
 
     def fetch_qr_code_url(self):
-        print("正在获取二维码链接...")
+        print(f"{Fore.CYAN}正在获取二维码链接...{Style.RESET_ALL}")
         try:
             response = self.session.get(self.base_url, headers=self.headers)
             if response.status_code == 200:
@@ -285,15 +300,15 @@ class QRLoginSystem:
                 match = re.search(pattern, response.text)
                 if match:
                     qr_code_url = match.group(0)
-                    print(f"成功获取二维码链接: {qr_code_url}")
+                    print(f"{Fore.GREEN}成功获取二维码链接{Style.RESET_ALL}")
                     return qr_code_url
         except requests.RequestException as e:
-            print(f"获取二维码链接出错: {e}")
-        print("未找到二维码链接")
+            print(f"{Fore.RED}获取二维码链接出错: {e}{Style.RESET_ALL}")
+        print(f"{Fore.RED}未找到二维码链接{Style.RESET_ALL}")
         return None
 
     def display_qr_code(self, qr_code_url):
-        print("准备显示二维码...")
+        print(f"{Fore.CYAN}准备显示二维码...{Style.RESET_ALL}")
         try:
             response = self.session.get(qr_code_url)
             if response.status_code == 200:
@@ -356,41 +371,41 @@ class QRLoginSystem:
                 root.mainloop()
                 return True
             else:
-                print("无法显示二维码，请手动复制以下URL到浏览器:")
+                print(f"{Fore.RED}无法显示二维码，请手动复制以下URL到浏览器:{Style.RESET_ALL}")
                 print(qr_code_url)
         except Exception as e:
-            print(f"发生错误: {e}")
-            print("请手动复制以下URL到浏览器:")
+            print(f"{Fore.RED}发生错误: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}请手动复制以下URL到浏览器:{Style.RESET_ALL}")
             print(qr_code_url)
         return False
 
     def check_login_status(self, root, attempt):
         if attempt >= self.max_attempts:
-            print("超过最大尝试次数，登录检查失败")
+            print(f"{Fore.RED}超过最大尝试次数，登录检查失败{Style.RESET_ALL}")
             root.destroy()
             return False
         check_url = f"{self.base_url}?op=checklogin"
         try:
             response = self.session.get(check_url, headers=self.headers)
-            print(f"第 {attempt + 1} 次检查登录状态，状态码: {response.status_code}")
+            print(f"{Fore.CYAN}第 {attempt + 1} 次检查登录状态，状态码: {response.status_code}{Style.RESET_ALL}")
             data = response.json()
             if data.get('status'):
-                print("登录成功")
+                print(f"{Fore.GREEN}登录成功{Style.RESET_ALL}")
                 self.handle_successful_login(response, data)
                 root.destroy()
                 return True
         except Exception as e:
-            print(f"第 {attempt + 1} 次登录检查出错: {str(e)}")
+            print(f"{Fore.RED}第 {attempt + 1} 次登录检查出错: {str(e)}{Style.RESET_ALL}")
         root.after(self.check_interval * 1000, self.check_login_status, root, attempt + 1)
         return None
 
     def handle_successful_login(self, initial_response, data):
-        print("处理登录成功后的操作...")
+        print(f"{Fore.CYAN}处理登录成功后的操作...{Style.RESET_ALL}")
         self.extract_and_set_cookies(initial_response)
         new_url = 'https://k8n.cn' + data['url']
         self.send_follow_up_request(new_url)
         cookies = self.get_required_cookies()
-        print(f"获取到Cookies: {cookies}")
+        print(f"{Fore.GREEN}获取到Cookies{Style.RESET_ALL}")
 
     def extract_and_set_cookies(self, response):
         set_cookies = response.headers.get('Set-Cookie')
@@ -402,15 +417,15 @@ class QRLoginSystem:
                 match = re.search(pattern, set_cookie)
                 if match:
                     cookie_value = match.group(1)
-                    print(f"提取到Cookie: {cookie_value}")
+                    print(f"{Fore.GREEN}提取到Cookie{Style.RESET_ALL}")
 
     def send_follow_up_request(self, url):
-        print("发送跟进请求...")
+        print(f"{Fore.CYAN}发送跟进请求...{Style.RESET_ALL}")
         try:
             response = self.session.get(url, headers=self.headers)
             self.extract_and_set_cookies(response)
         except requests.RequestException as e:
-            print(f"跟进请求出错: {e}")
+            print(f"{Fore.RED}跟进请求出错: {e}{Style.RESET_ALL}")
 
     def get_required_cookies(self):
         cookies = self.session.cookies.get_dict()
@@ -419,79 +434,61 @@ class QRLoginSystem:
         }
 
     def fetch_logged_in_data(self):
-        print("获取登录后数据...")
+        print(f"{Fore.CYAN}获取登录后数据...{Style.RESET_ALL}")
         data_url = 'http://k8n.cn/student'
         try:
             response = self.session.get(data_url, headers=self.headers)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                class_info_list = []
-                for card in soup.find_all('div', class_='card mb-3 course'):
-                    course_id = card.get('course_id')
-                    if course_id:
-                        course_name = card.find('h5', class_='course_name').text.strip() if card.find('h5', class_='course_name') else "未知课程名称"
-                        class_name = card.find('p', style="color: #fff").text.strip() if card.find('p', style="color: #fff") else "未知班级名称"
-                        class_code = card.find('span', style="float: right").text.split(' ')[-1].strip() if card.find('span', style="float: right") else "未知班级码"
-
-                        class_info_list.append({
-                            '课程 ID': course_id,
-                            '班级名称': class_name,
-                            '课程名称': course_name,
-                            '班级码': class_code
-                        })
-                    else:
-                        print("未找到有效的 course_id 属性")
-
-                if not class_info_list:
-                    print("未找到任何班级信息")
+                class_ids = self._extract_class_ids(response.text)
+                
+                if not class_ids:
+                    print(f"{Fore.RED}未找到任何班级信息{Style.RESET_ALL}")
                     return {"status": "error"}
+                
+                print(f"{Fore.GREEN}班级信息：{Style.RESET_ALL}")
+                for idx, class_id in enumerate(class_ids, start=1):
+                    print(f"  {idx}. {class_id}")
+                
+                if len(class_ids) == 1:
+                    self.classid = class_ids[0]
+                    print(f"{Fore.GREEN}自动选择 classid: {self.classid}{Style.RESET_ALL}")
                 else:
-                    print("班级信息：")
-                    for idx, info in enumerate(class_info_list, start=1):
-                        print(f"  班级 {idx}: 课程 ID: {info['课程 ID']} 班级名称: {info['班级名称']} 课程名称: {info['课程名称']} 班级码: {info['班级码']}")
-
-                    all_classids = [info['课程 ID'] for info in class_info_list]
-                    print(f"所有 classid: {all_classids}")
-
-                    if len(all_classids) == 0:
-                        print("未找到有效的 classid")
-                        return {"status": "error"}
-                    elif len(all_classids) == 1:
-                        self.classid = all_classids[0]
-                        print(f"自动选择 classid: {self.classid}")
-                    else:
-                        while True:
-                            try:
-                                print("请选择要使用的 classid：")
-                                for idx, classid in enumerate(all_classids, start=1):
-                                    print(f"{idx}. {classid}")
-                                choice = int(input("请输入对应的序号: ")) - 1
-                                if 0 <= choice < len(all_classids):
-                                    self.classid = all_classids[choice]
-                                    print(f"已选择 classid: {self.classid}")
-                                    scanned_cookie = self.session.cookies.get('remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d')
-                                    if scanned_cookie:
-                                        scanned_cookie = f"remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d={scanned_cookie}"
-                                        if len(scanned_cookie) > 20:
-                                            displayed_cookie = f"{scanned_cookie[:10]}...{scanned_cookie[-10:]}"
-                                        else:
-                                            displayed_cookie = scanned_cookie
-                                            print(f"扫码获取成功")
-                                        print(f"配置的 cookie: {displayed_cookie}")
-                                    print(f"配置的 classid: {self.classid}")
-                                    break
-                                else:
-                                    print("输入的序号无效")
-                            except ValueError:
-                                print("输入无效，请输入数字")
-
-                    return {"status": "success", "classid": self.classid}
+                    while True:
+                        try:
+                            choice = int(input("请输入要使用的班级序号: ")) - 1
+                            if 0 <= choice < len(class_ids):
+                                self.classid = class_ids[choice]
+                                print(f"{Fore.GREEN}已选择 classid: {self.classid}{Style.RESET_ALL}")
+                                break
+                            else:
+                                print(f"{Fore.RED}输入的序号无效{Style.RESET_ALL}")
+                        except ValueError:
+                            print(f"{Fore.RED}输入无效，请输入数字{Style.RESET_ALL}")
+                
+                scanned_cookie = self.session.cookies.get('remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d')
+                if scanned_cookie:
+                    scanned_cookie = f"remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d={scanned_cookie}"
+                    print(f"{Fore.GREEN}扫码获取成功{Style.RESET_ALL}")
+                
+                return {
+                    "status": "success",
+                    "classid": self.classid,
+                    "cookie": scanned_cookie
+                }
             else:
-                print(f"请求失败，状态码: {response.status_code}")
+                print(f"{Fore.RED}请求失败，状态码: {response.status_code}{Style.RESET_ALL}")
                 return {"status": "error"}
         except requests.RequestException as e:
-            print(f"获取数据出错: {e}")
+            print(f"{Fore.RED}获取数据出错: {e}{Style.RESET_ALL}")
             return {"status": "error"}
+
+    def _extract_class_ids(self, html: str) -> List[str]:
+        """从HTML中提取所有班级ID"""
+        soup = BeautifulSoup(html, 'html.parser')
+        return [div.get('course_id') 
+                for div in soup.find_all('div', class_='card mb-3 course') 
+                if div.get('course_id')]
 
 # === 配置更新器 ===
 class ConfigUpdater:
@@ -503,230 +500,396 @@ class ConfigUpdater:
         self.scanned_cookie = None
 
     def init_config(self) -> Dict[str, Any]:
-        if not self.manager.config or not self._validate_config():
-            self.logger.log("配置无效，需要重新配置", LogLevel.ERROR)
-            return self._update_config_interactively()
-
+        """首次运行自动进入配置向导"""
+        if not self._validate_config():
+            self.logger.log("配置无效或首次运行，进入配置向导", LogLevel.INFO)
+            return self._first_run_config_wizard()
+        
         self._show_current_config()
         if self._should_update_config():
             return self._update_config_interactively()
-
+        
         return self.manager.config
 
-    def _validate_config(self) -> bool:
+    def _first_run_config_wizard(self) -> Dict[str, Any]:
+        """首次运行配置向导"""
+        print(f"\n{Fore.GREEN}🌟 欢迎使用自动签到系统 🌟{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}这是您首次运行，需要进行初始配置{Style.RESET_ALL}")
+        print("="*50)
+        
+        # 第一步：优先推荐扫码登录
+        config = self._setup_login_method()
+        
+        # 第二步：补充位置信息
+        self._setup_location_info(config)
+        
+        # 第三步：其他设置
+        self._setup_other_settings(config)
+        
+        # 验证并保存配置
         try:
-            ConfigModel(**self.manager.config)
-            return True
+            validated_config = ConfigModel(**config).model_dump()
+            self.manager.config = validated_config
+            self.manager.save()
+            print(f"\n{Fore.GREEN}✅ 初始配置完成！{Style.RESET_ALL}")
+            return validated_config
         except ValidationError as e:
             self._handle_validation_error(e)
-            return False
+            return self._first_run_config_wizard()
 
-    def _handle_validation_error(self, error: ValidationError) -> None:
-        error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in error.errors()]
-        self.logger.log("配置验证失败:\n" + "\n".join(error_messages), LogLevel.ERROR)
-
-    def _show_current_config(self) -> None:
-        self.logger.log("---------- 当前配置信息 ----------", LogLevel.INFO)
-        for key, value in self.manager.config.items():
-            display_value = value if key not in ["cookie", "pushplus"] else "[已隐藏]"
-            self.logger.log(f"{key}: {display_value}", LogLevel.INFO)
-        self.logger.log("--------------------------------", LogLevel.INFO)
-
-    def _get_user_choice_with_timeout(self, prompt: str, choices: Tuple[str, ...], 
-                                        default: Optional[str] = None, 
-                                        timeout: int = 10) -> str:
-            user_input = None
-
-            def get_input():
-                nonlocal user_input
-                try:
-                    user_input = input(prompt).strip().lower()
-                except EOFError:
-                    pass
-
-            input_thread = threading.Thread(target=get_input)
-            input_thread.start()
-
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                if not input_thread.is_alive():
-                    break
-                time.sleep(0.1)
-
-            if input_thread.is_alive():
-                print(f"\n{Fore.YELLOW}输入超时，自动选择默认值 '{default}'{Style.RESET_ALL}")
-                return default
-
-            if not user_input and default:
-                return default
-
-            if user_input in choices:
-                return user_input
-
-            print(f"\033[31m请输入 {' 或 '.join(choices)}\033[0m")
-            return self._get_user_choice_with_timeout(prompt, choices, default, timeout)
-
-
-    def _should_update_config(self) -> bool:
-        """Windows专用：检查是否需要更新配置，10秒无输入默认返回False"""
-        return self._get_user_choice_with_timeout(
-            "当前配置有效。是否修改配置？(y/n, 默认n): ",
-            ('y','n'),
-            default='n',
-            timeout=10
-        ) == 'y'
-
-    def _update_time_range_setting(self) -> None:
-        """更新时间段控制设置"""
-        current_setting = self.manager.config.get('enable_time_range', False)
-        print(f"\n当前时间段控制状态: {'已启用' if current_setting else '已禁用'}")
+    def _setup_login_method(self) -> Dict[str, Any]:
+        """设置登录方式（优先扫码）"""
+        print(f"\n{Fore.CYAN}=== 第一步：登录方式设置 ==={Style.RESET_ALL}")
+        print("请选择获取Cookie和班级ID的方式：")
+        print(f"1. {Fore.GREEN}扫码登录（推荐）{Style.RESET_ALL}")
+        print("2. 手动输入")
         
-        if self._get_user_choice("是否修改时间段控制? (y/n, 默认n): ", ('y', 'n'), default='n') == 'y':
-            enable = self._get_user_choice("启用时间段控制? (y/n, 默认n): ", ('y', 'n'), default='n') == 'y'
-            self.manager.config['enable_time_range'] = enable
+        while True:
+            choice = input("\n请选择(1/2，默认1): ").strip() or "1"
             
-            if enable:
-                self._update_field("start_time", ConfigModel.validate_time_format)
-                self._update_field("end_time", ConfigModel.validate_time_format)
-                print(f"已设置运行时间段: {self.manager.config['start_time']} 至 {self.manager.config['end_time']}")
+            if choice == "1":
+                if self._scan_and_update():
+                    return {
+                        "cookie": self.scanned_cookie,
+                        "class_id": self.scanned_class_ids[0] if self.scanned_class_ids else ""
+                    }
+                else:
+                    print(f"{Fore.RED}扫码登录失败，请选择其他方式{Style.RESET_ALL}")
+            elif choice == "2":
+                return self._manual_input_credentials()
             else:
-                print("已禁用时间段控制，程序将全天候运行")
+                print(f"{Fore.RED}无效输入，请选择1或2{Style.RESET_ALL}")
 
-    def _update_config_interactively(self) -> Dict[str, Any]:
-        self.logger.log("开始交互式配置更新", LogLevel.INFO)
-        original_config = deepcopy(self.manager.config)
-        
-        try:
-            self._update_cookie_and_class_id()
-            self._update_coordinates()
-            self._update_search_interval()
-            self._update_pushplus()
-            self._update_remark()
-            self._update_time_range_setting()  # 更新时间段控制设置
-
-            self._show_current_config()
-            if self._get_user_choice("确认保存配置? (y/n, 默认y): ", ('y', 'n'), default='y') != 'y':
-                self.manager.config = original_config
-                return self._update_config_interactively()
-
+    def _scan_and_update(self) -> bool:
+        """执行扫码登录流程"""
+        for attempt in range(1, 4):
             try:
-                ConfigModel(**self.manager.config)
-                self.manager.save()
-                return self.manager.config
-            except ValidationError as e:
-                self._handle_validation_error(e)
-                return self._update_config_interactively()
-        except Exception as e:
-            self.manager.config = original_config
-            raise
+                print(f"\n🔄 尝试获取二维码 (第 {attempt} 次)...")
+                qr_url = self.login_system.fetch_qr_code_url()
+                if not qr_url:
+                    continue
+                    
+                print("✅ 二维码获取成功，正在显示...")
+                if not self.login_system.display_qr_code(qr_url):
+                    print("⚠️ 二维码显示失败，请尝试手动复制以下URL到浏览器:")
+                    print(qr_url)
+                    continue
+                    
+                print("\n⏳ 正在等待扫码登录...")
+                result = self.login_system.fetch_logged_in_data()
+                
+                if result["status"] == "success":
+                    self.scanned_cookie = result["cookie"]
+                    self.scanned_class_ids = [result["classid"]]
+                    
+                    print("\n✅ 登录成功！获取到以下信息:")
+                    print(f"- 班级ID: {result['classid']}")
+                    cookie_display = f"{self.scanned_cookie[:15]}...{self.scanned_cookie[-15:]}" if len(self.scanned_cookie) > 30 else self.scanned_cookie
+                    print(f"- Cookie: {cookie_display}")
+                    return True
+                    
+            except Exception as e:
+                print(f"⚠️ 第 {attempt} 次扫码尝试失败: {str(e)}")
+                
+            if attempt < 3:
+                if input("\n扫码未成功，是否重试？(y/n): ").lower() != 'y':
+                    break
+                
+        print("\n❌ 扫码登录失败，请尝试手动输入配置")
+        return False
 
-    def _get_user_input(self, prompt: str, validator: Callable[[str], Any], required: bool = False) -> str:
+    def _manual_input_credentials(self) -> Dict[str, Any]:
+        """手动输入凭证信息"""
+        print(f"\n{Fore.YELLOW}⚠️ 请手动输入必要信息{Style.RESET_ALL}")
+        config = {}
+        
+        # 使用验证器确保输入有效
+        config["cookie"] = self._get_validated_input(
+            "请输入Cookie: ",
+            ConfigModel.validate_cookie,
+            is_required=True
+        )
+        
+        config["class_id"] = self._get_validated_input(
+            "请输入班级ID: ",
+            ConfigModel.validate_class_id,
+            is_required=True
+        )
+        
+        return config
+
+    def _get_validated_input(self, prompt: str, validator: Callable, is_required: bool = False) -> str:
+        """获取并验证用户输入"""
         while True:
             try:
                 value = input(prompt).strip()
-                if required and not value:
+                if is_required and not value:
                     raise ValueError("该字段为必填项")
                 if value:
                     return validator(value)
                 return value
             except ValueError as e:
-                self.logger.log(f"{e}，请重新输入", LogLevel.ERROR)
-            except (EOFError, KeyboardInterrupt):
-                self.logger.log("\n输入中断，请重新输入", LogLevel.ERROR)
+                print(f"{Fore.RED}错误: {e}{Style.RESET_ALL}")
 
-    def _get_user_choice(self, prompt: str, choices: Tuple[str, ...], default: Optional[str] = None) -> str:
+    def _setup_location_info(self, config: Dict[str, Any]) -> None:
+        """设置位置信息"""
+        print(f"\n{Fore.CYAN}=== 第二步：位置信息设置 ==={Style.RESET_ALL}")
+        print("请提供您常用的签到位置坐标：")
+        
+        config["lat"] = self._get_validated_input(
+            "请输入纬度（如39.9042）: ",
+            ConfigModel.validate_latitude,
+            is_required=True
+        )
+        
+        config["lng"] = self._get_validated_input(
+            "请输入经度（如116.4074）: ",
+            ConfigModel.validate_longitude,
+            is_required=True
+        )
+        
+        config["acc"] = self._get_validated_input(
+            "请输入海拔（如50.0）: ",
+            ConfigModel.validate_altitude,
+            is_required=True
+        )
+
+    def _setup_other_settings(self, config: Dict[str, Any]) -> None:
+        """设置其他选项"""
+        print(f"\n{Fore.CYAN}=== 第三步：其他设置 ==={Style.RESET_ALL}")
+        
+        # 检查间隔
         while True:
-            choice = input(prompt).strip().lower()
-            if not choice and default:
-                return default
-            if choice in choices:
-                return choice
-            print(f"\033[31m请输入 {' 或 '.join(choices)}\033[0m")
+            try:
+                time_input = input(
+                    f"请输入检查间隔（秒，默认{AppConstants.DEFAULT_SEARCH_INTERVAL}）: "
+                ).strip()
+                config["time"] = int(time_input) if time_input else AppConstants.DEFAULT_SEARCH_INTERVAL
+                ConfigModel.validate_search_time(config["time"])
+                break
+            except ValueError as e:
+                print(f"{Fore.RED}错误: {e}{Style.RESET_ALL}")
+        
+        # PushPlus通知
+        config["pushplus"] = input("请输入PushPlus令牌（可选）: ").strip()
+        
+        # 时间段控制
+        self._setup_time_range(config)
+        
+        # 备注信息
+        config["remark"] = input("请输入备注信息（可选）: ").strip() or "自动签到配置"
+
+    def _setup_time_range(self, config: Dict[str, Any]) -> None:
+        """设置运行时间段"""
+        enable = input("是否启用时间段控制？(y/n, 默认n): ").strip().lower() == 'y'
+        
+        config["enable_time_range"] = enable
+        
+        if enable:
+            print("请设置运行时间段（格式: HH:MM）")
+            while True:
+                try:
+                    start = input("开始时间（如08:00）: ").strip()
+                    end = input("结束时间（如22:00）: ").strip()
+                    
+                    # 验证时间格式
+                    datetime.strptime(start, '%H:%M')
+                    datetime.strptime(end, '%H:%M')
+                    
+                    if start >= end:
+                        raise ValueError("开始时间必须早于结束时间")
+                        
+                    config["start_time"] = start
+                    config["end_time"] = end
+                    break
+                except ValueError as e:
+                    print(f"{Fore.RED}错误: {e}{Style.RESET_ALL}")
+
+    def _validate_config(self) -> bool:
+        try:
+            ConfigModel(**self.manager.config)
+            return True
+        except ValidationError:
+            return False
+
+    def _show_current_config(self) -> None:
+        """显示当前配置信息"""
+        config = self.manager.config
+        self.logger.log("\n📋 当前配置信息", LogLevel.INFO)
+        self.logger.log("--------------------------------", LogLevel.INFO)
+        
+        cookie_display = config["cookie"]
+        if len(cookie_display) > 30:
+            cookie_display = f"{cookie_display[:15]}...{cookie_display[-15:]}"
+        
+        config_items = [
+            ("班级ID", config["class_id"]),
+            ("纬度", config["lat"]),
+            ("经度", config["lng"]),
+            ("海拔", config["acc"]),
+            ("检查间隔", f"{config['time']}秒"),
+            ("Cookie", cookie_display),
+            ("PushPlus", config["pushplus"] or "未设置"),
+            ("备注", config["remark"]),
+            ("时间段控制", "已启用" if config["enable_time_range"] else "已禁用")
+        ]
+        
+        if config["enable_time_range"]:
+            config_items.append(("运行时间段", f"{config['start_time']} 至 {config['end_time']}"))
+        
+        for name, value in config_items:
+            self.logger.log(f"🔹 {name.ljust(10)}: {value}", LogLevel.INFO)
+        
+        self.logger.log("--------------------------------", LogLevel.INFO)
+
+    def _should_update_config(self) -> bool:
+        """询问用户是否要更新配置（10秒超时自动选择默认值n）"""
+        print("\n是否要修改当前配置？(y/n, 默认n): ", end='', flush=True)
+        
+        # 设置超时时间（秒）
+        timeout = 10
+        default_choice = 'n'
+        user_input = [default_choice]  # 使用列表以便在嵌套函数中修改
+        
+        def get_input():
+            try:
+                user_input[0] = input().strip().lower() or default_choice
+            except:
+                pass  # 忽略所有输入异常
+        
+        # 创建并启动输入线程
+        input_thread = threading.Thread(target=get_input)
+        input_thread.daemon = True
+        input_thread.start()
+        
+        # 等待线程结束或超时
+        input_thread.join(timeout)
+        
+        # 如果线程还在运行（超时），则终止它
+        if input_thread.is_alive():
+            print(f"\n{Fore.YELLOW}输入超时，自动选择默认值 '{default_choice}'{Style.RESET_ALL}")
+            # 由于input()是阻塞的，我们需要强制结束控制台输入
+            # 在Windows和Linux/macOS上方法不同
+            try:
+                import msvcrt
+                while msvcrt.kbhit():
+                    msvcrt.getch()  # 清空输入缓冲区
+            except:
+                pass  # 非Windows系统忽略
+        
+        return user_input[0] == 'y'
+
+    def _update_config_interactively(self) -> Dict[str, Any]:
+        """交互式更新配置"""
+        original_config = deepcopy(self.manager.config)
+        
+        try:
+            # 1. 首先询问是否要修改cookie和class_id
+            self._update_cookie_and_class_id()
+            
+            # 2. 显示当前配置并询问是否继续修改其他项
+            self._show_current_config()
+            
+            # 3. 提供选择性修改各项配置
+            while True:
+                print("\n🔧 请选择要修改的配置项:")
+                print("1. 位置信息 (纬度/经度/海拔)")
+                print("2. 检查间隔时间")
+                print("3. PushPlus通知设置")
+                print("4. 备注信息")
+                print("5. 运行时间段设置")
+                print("6. 查看当前所有配置")
+                print("0. 完成配置")
+                
+                choice = input("\n请输入要修改的选项编号 (0-6, 默认0): ").strip() or "0"
+                
+                if choice == "0":
+                    break
+                elif choice == "1":
+                    print("\n📍 更新位置信息")
+                    self._update_coordinates()
+                elif choice == "2":
+                    print("\n⏱️ 更新检查间隔")
+                    self._update_search_interval()
+                elif choice == "3":
+                    print("\n📨 更新PushPlus设置")
+                    self._update_pushplus()
+                elif choice == "4":
+                    print("\n📝 更新备注信息")
+                    self._update_remark()
+                elif choice == "5":
+                    print("\n⏰ 更新时间段设置")
+                    self._update_time_range_setting()
+                elif choice == "6":
+                    self._show_current_config()
+                else:
+                    print("⚠️ 无效的选项，请重新输入")
+            
+            # 确认保存
+            self._show_current_config()
+            if input("\n确认保存以上配置？(y/n, 默认y): ").strip().lower() or 'y' == 'y':
+                try:
+                    ConfigModel(**self.manager.config)
+                    self.manager.save()
+                    print("✅ 配置保存成功！")
+                    return self.manager.config
+                except ValidationError as e:
+                    self._handle_validation_error(e)
+                    return self._update_config_interactively()
+            else:
+                self.manager.config = original_config
+                print("🔄 已恢复原始配置")
+                return self._update_config_interactively()
+                
+        except Exception as e:
+            self.manager.config = original_config
+            self.logger.log(f"配置过程中出错: {e}", LogLevel.ERROR)
+            raise
 
     def _update_cookie_and_class_id(self):
-        current_cookie = self.manager.config.get("cookie", "")
-        current_class_id = self.manager.config.get("class_id", "")
+        """更新cookie和class_id"""
+        print("\n🛠️ 更新登录凭证")
+        choice = input("是否要更新Cookie和班级ID？(y/n, 默认n): ").strip().lower() or 'n'
+        if choice == 'y':
+            self._setup_login_method()
 
-        if not current_cookie or not current_class_id:
-            message = "当前 cookie 或 class_id 无效或缺失，选择获取方式：(1. 扫码, 2. 手动输入, 默认扫码): "
-        elif self._ask_update_choice(current_cookie, current_class_id):
-            message = "选择获取方式：(1. 扫码, 2. 手动输入, 默认扫码): "
-        else:
-            return
+    def _update_coordinates(self):
+        """更新坐标信息"""
+        self._setup_location_info(self.manager.config)
 
-        choice = self._get_user_choice(message, ('1', '2'), default='1')
-        if choice == '1':
-            success = self._scan_and_update()
-            if not success:
-                print("扫码获取失败，将进行手动输入。")
-                self._update_required_fields()
-        else:
-            self._update_required_fields()
-
-    def _ask_update_choice(self, current_cookie: str, current_class_id: str) -> bool:
-        display_cookie = current_cookie if not current_cookie else "[已隐藏]"
-        display_class_id = current_class_id
-        return self._get_user_choice(f"当前 cookie 为: {display_cookie}，class_id 为: {display_class_id}，是否修改？(y/n, 默认n): ", ('y', 'n'), default='n') == 'y'
-
-    def _scan_and_update(self):
-        for attempt in range(1, 4):
+    def _update_search_interval(self):
+        """更新检查间隔"""
+        while True:
             try:
-                qr_url = self.login_system.fetch_qr_code_url()
-                if not qr_url:
-                    continue
-                    
-                if not self.login_system.display_qr_code(qr_url):
-                    continue
-                    
-                result = self.login_system.fetch_logged_in_data()
-                if result["status"] == "success":
-                    self.scanned_cookie = self.login_system.session.cookies.get(
-                        'remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d')
-                    self.scanned_cookie = f"remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d={self.scanned_cookie}"
-                    self.scanned_class_ids = [self.login_system.classid]
-                    selected_class_id = self._select_class_id()
-                    self.manager.config["class_id"] = selected_class_id
-                    self.manager.config["cookie"] = self.scanned_cookie
-                    self.manager.save()
-                    masked_cookie = f"{cookie[:10]}...{cookie[-10:]}"if len(cookie) > 20 else cookie
-                    self.logger.log("扫码获取成功, 关键配置已更新", LogLevel.INFO)
-                    self.logger.log(f"配置的 cookie: {masked_cookie}", LogLevel.INFO)
-                    self.logger.log(f"配置的 classid: {selected_class_id}", LogLevel.INFO)
-                    
+                time_input = input(
+                    f"请输入新的检查间隔（秒，当前{self.manager.config.get('time', 60)}）: "
+                ).strip()
+                new_time = int(time_input) if time_input else self.manager.config.get('time', 60)
+                ConfigModel.validate_search_time(new_time)
+                self.manager.config["time"] = new_time
+                break
+            except ValueError as e:
+                print(f"{Fore.RED}错误: {e}{Style.RESET_ALL}")
 
-                    return True
-            except Exception as e:
-                self.logger.log(f"第 {attempt} 次扫码尝试失败: {e}", LogLevel.ERROR)
-                
-            if attempt < 3:
-                if self._get_user_choice("扫码未成功，是否重试? (y/n): ", ('y', 'n')) != 'y':
-                    break
-        return False
+    def _update_pushplus(self):
+        """更新PushPlus设置"""
+        self.manager.config["pushplus"] = input("请输入新的PushPlus令牌（当前: {}）: ".format(
+            self.manager.config.get("pushplus", "")
+        )).strip()
 
-    def _select_class_id(self) -> str:
-        return self.login_system.classid
+    def _update_remark(self):
+        """更新备注信息"""
+        self.manager.config["remark"] = input("请输入新的备注信息（当前: {}）: ".format(
+            self.manager.config.get("remark", "")
+        )).strip() or "自动签到配置"
 
-    def _update_required_fields(self):
-        self._update_field("cookie", ConfigModel.validate_cookie, is_required=True)
-        self._update_field("class_id", ConfigModel.validate_class_id, is_required=True)
+    def _update_time_range_setting(self):
+        """更新时间段设置"""
+        self._setup_time_range(self.manager.config)
 
-    def _update_field(self, field: str, validator: Callable[[str], Any], is_required: bool = False) -> None:
-        prompt = f"请输入 {field}{' [必填]' if is_required else ''}: "
-        self.manager.config[field] = self._get_user_input(prompt, validator, required=is_required)
-
-    def _update_coordinates(self) -> None:
-        self._update_field("lat", ConfigModel.validate_latitude, is_required=True)
-        self._update_field("lng", ConfigModel.validate_longitude, is_required=True)
-        self._update_field("acc", ConfigModel.validate_altitude, is_required=True)
-
-    def _update_search_interval(self) -> None:
-        self._update_field("time", ConfigModel.validate_search_time, is_required=True)
-
-    def _update_pushplus(self) -> None:
-        self._update_field("pushplus", lambda x: x)
-
-    def _update_remark(self) -> None:
-        self._update_field("remark", lambda x: x)
+    def _handle_validation_error(self, error: ValidationError) -> None:
+        error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in error.errors()]
+        self.logger.log("配置验证失败:\n" + "\n".join(error_messages), LogLevel.ERROR)
 
 # === 签到任务 ===
 class SignTask:
@@ -757,19 +920,17 @@ class SignTask:
     def _should_run_now(self) -> bool:
         """检查当前是否应该运行签到任务"""
         if not self.config.get('enable_time_range', False):
-            return True  # 如果未启用时间段控制，则始终返回True
+            return True
             
         try:
             now = datetime.now()
             current_time = now.strftime('%H:%M')
-            
             start_time = self.config.get('start_time', '08:00')
             end_time = self.config.get('end_time', '22:00')
-            
             return start_time <= current_time <= end_time
         except Exception as e:
             self.logger.log(f"检查时间段出错: {e}", LogLevel.ERROR)
-            return True  # 出错时默认允许运行
+            return True
 
     def _log_waiting_message(self) -> None:
         """记录等待日志"""
@@ -777,7 +938,7 @@ class SignTask:
         start_time = self.config.get('start_time', '08:00')
         end_time = self.config.get('end_time', '22:00')
         self.logger.log(
-            f"当前时间 {current_time} 不在运行时间段内 ({start_time}-{end_time})，等待中...",
+            f"⏳ 当前时间 {current_time} 不在运行时间段内 ({start_time}-{end_time})，等待中...",
             LogLevel.INFO
         )
 
@@ -791,43 +952,47 @@ class SignTask:
     def _monitor_commands(self):
         while self._running:
             try:
-                cmd = input("输入命令 (q=退出, s=立即签到, c=检查状态): \n").strip().lower()
+                cmd = input("\n输入命令 (q=退出, s=立即签到, c=检查状态): ").strip().lower()
                 if cmd == 'q':
                     self._running = False
+                    print("\n🛑 正在停止程序...")
                 elif cmd == 's':
+                    print("\n🔍 立即执行签到检查...")
                     self._execute_sign_cycle()
                 elif cmd == 'c':
                     self._show_status()
+                else:
+                    print("⚠️ 未知命令，可用命令: q=退出, s=立即签到, c=检查状态")
             except (EOFError, KeyboardInterrupt):
                 continue
 
     def _show_status(self):
         print(f"\n{Fore.CYAN}=== 当前状态 ==={Style.RESET_ALL}")
-        print(f"已签到ID: {self.signed_ids}")
-        print(f"无效签到ID: {self.invalid_sign_ids}")
+        print(f"✅ 已签到ID: {self.signed_ids}")
+        print(f"❌ 无效签到ID: {self.invalid_sign_ids}")
         if self.config.get('enable_time_range', False):
-            print(f"运行时间段: {self.config.get('start_time', '08:00')} 至 {self.config.get('end_time', '22:00')}")
+            print(f"⏰ 运行时间段: {self.config.get('start_time', '08:00')} 至 {self.config.get('end_time', '22:00')}")
         else:
-            print("运行时间段: 全天候运行")
-        print(f"下次检查: {datetime.now() + timedelta(seconds=self.config.get('time', 60))}")
+            print("⏰ 运行时间段: 全天候运行")
+        print(f"⏱️ 下次检查: {datetime.now() + timedelta(seconds=self.config.get('time', 60))}")
 
     def _cleanup_control_thread(self):
         if self._control_thread and self._control_thread.is_alive():
             self._control_thread.join(timeout=1)
 
     def _execute_sign_cycle(self) -> None:
-        self.logger.log(f"开始检索签到任务，当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", LogLevel.INFO)
+        self.logger.log(f"🔍 开始检索签到任务，当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", LogLevel.INFO)
 
         try:
             sign_ids = self._fetch_sign_ids()
             if not sign_ids:
-                self.logger.log("本次未找到有效签到任务", LogLevel.INFO)
+                self.logger.log("ℹ️ 本次未找到有效签到任务", LogLevel.INFO)
                 return
 
             for sign_id in sign_ids:
                 self._process_sign_id(sign_id)
         except requests.RequestException as e:
-            self.logger.log(f"网络请求出错: {e}", LogLevel.ERROR)
+            self.logger.log(f"❌ 网络请求出错: {e}", LogLevel.ERROR)
 
     def _fetch_sign_ids(self) -> List[str]:
         url = f'http://k8n.cn/student/course/{self.config["class_id"]}/punchs'
@@ -836,9 +1001,9 @@ class SignTask:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
 
-        self.logger.log(f"请求响应状态码: {response.status_code}", LogLevel.INFO)
+        self.logger.log(f"ℹ️ 请求响应状态码: {response.status_code}", LogLevel.INFO)
         sign_ids = self._extract_sign_ids(response.text)
-        self.logger.log(f"找到的签到ID: {sign_ids}", LogLevel.INFO)
+        self.logger.log(f"🔍 找到的签到ID: {sign_ids}", LogLevel.INFO)
 
         return sign_ids
 
@@ -850,18 +1015,18 @@ class SignTask:
 
     def _process_sign_id(self, sign_id: str) -> None:
         if not sign_id.isdigit():
-            self.logger.log(f"跳过无效签到ID格式: {sign_id}", LogLevel.WARNING)
+            self.logger.log(f"⚠️ 跳过无效签到ID格式: {sign_id}", LogLevel.WARNING)
             return
 
         if sign_id in self.invalid_sign_ids:
-            self.logger.log(f"跳过需要密码的签到ID: {sign_id}", LogLevel.INFO)
+            self.logger.log(f"ℹ️ 跳过需要密码的签到ID: {sign_id}", LogLevel.INFO)
             return
 
         if sign_id in self.signed_ids:
-            self.logger.log(f"跳过已签到的ID: {sign_id}", LogLevel.INFO)
+            self.logger.log(f"ℹ️ 跳过已签到的ID: {sign_id}", LogLevel.INFO)
             return
 
-        self.logger.log(f"处理签到ID: {sign_id}", LogLevel.INFO)
+        self.logger.log(f"🔍 处理签到ID: {sign_id}", LogLevel.INFO)
         self._attempt_sign(sign_id)
 
     def _attempt_sign(self, sign_id: str) -> None:
@@ -876,30 +1041,56 @@ class SignTask:
             'gps_addr': ''
         }
 
-        try:
-            response = requests.post(url, headers=headers, data=payload, timeout=10)
-            response.raise_for_status()
-            self._handle_sign_response(response.text, sign_id)
-        except requests.RequestException as e:
-            self.logger.log(f"签到请求出错: {e}", LogLevel.ERROR)
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.post(url, headers=headers, data=payload, timeout=10)
+                response.raise_for_status()
+                
+                if not response.text:
+                    raise ValueError("空响应内容")
+                    
+                self._handle_sign_response(response.text, sign_id)
+                return
+                
+            except requests.RequestException as e:
+                self.logger.log(
+                    f"❌ 签到请求出错 (尝试 {attempt}/{max_retries}): {str(e)}", 
+                    LogLevel.ERROR
+                )
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                else:
+                    self.logger.log(
+                        f"❌ 达到最大重试次数 ({max_retries})，放弃签到ID: {sign_id}", 
+                        LogLevel.ERROR
+                    )
+            except Exception as e:
+                self.logger.log(
+                    f"❌ 处理签到响应时出错: {str(e)}", 
+                    LogLevel.ERROR
+                )
+                break
 
     def _handle_sign_response(self, html: str, sign_id: str) -> None:
         soup = BeautifulSoup(html, 'html.parser')
         title_tag = soup.find('div', id='title')
         if not title_tag:
-            self.logger.log("无法解析签到响应", LogLevel.ERROR)
+            self.logger.log("❌ 无法解析签到响应", LogLevel.ERROR)
             return
 
         result = title_tag.text.strip()
 
         if "签到密码错误" in result:
-            self.logger.log(f"不支持密码签到: {result}，将忽略此ID {sign_id}", LogLevel.WARNING)
+            self.logger.log(f"⚠️ 不支持密码签到: {result}，将忽略此ID {sign_id}", LogLevel.WARNING)
             self.invalid_sign_ids.add(sign_id)
         elif "我已签到过啦" in result:
-            self.logger.log(f"已签到: {result}，不再处理此ID {sign_id}", LogLevel.INFO)
+            self.logger.log(f"ℹ️ 已签到: {result}，不再处理此ID {sign_id}", LogLevel.INFO)
             self.signed_ids.add(sign_id)
         else:
-            self.logger.log(f"签到结果: {result}", LogLevel.INFO)
+            self.logger.log(f"✅ 签到结果: {result}", LogLevel.INFO)
             self._send_notification(result, sign_id)
 
     def _send_notification(self, result: str, sign_id: str) -> None:
@@ -909,7 +1100,7 @@ class SignTask:
         is_success = "成功" in result
         title = "签到成功通知" if is_success else "签到失败通知"
         content = f"""
-{'签到成功' if is_success else '签到失败'}!
+{'🎉 签到成功' if is_success else '❌ 签到失败'}!
 - 班级ID: {self.config["class_id"]}
 - 签到ID: {sign_id}
 - 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -926,7 +1117,7 @@ class SignTask:
             )
             requests.get(push_url, timeout=10).raise_for_status()
         except requests.RequestException as e:
-            self.logger.log(f"推送消息出错: {e}", LogLevel.ERROR)
+            self.logger.log(f"❌ 推送消息出错: {e}", LogLevel.ERROR)
 
     def _build_headers(self) -> Dict[str, str]:
         return {
@@ -960,7 +1151,7 @@ class SignTask:
 
     def _wait_for_next_cycle(self) -> bool:
         interval = self.config.get("time", AppConstants.DEFAULT_SEARCH_INTERVAL)
-        self.logger.log(f"等待下次检索，间隔: {interval}秒", LogLevel.INFO)
+        self.logger.log(f"⏳ 等待下次检索，间隔: {interval}秒", LogLevel.INFO)
         
         start_time = time.time()
         while time.time() - start_time < interval and self._running:
@@ -972,54 +1163,50 @@ class SignTask:
 # === 主程序入口 ===
 if __name__ == "__main__":
     try:
+        # 显示欢迎信息
+        print("\n" + "="*50)
+        print(f"{Fore.GREEN}{Style.BRIGHT}🌟 自动签到系统 v1.0 🌟{Style.RESET_ALL}")
+        print("="*50)
+        print(f"{Fore.CYAN}欢迎使用自动签到系统{Style.RESET_ALL}")
+        print("="*50)
+        print("使用说明:")
+        print("- 按 q 退出程序")
+        print("- 按 s 立即签到")
+        print("- 按 c 查看状态")
+        print("="*50 + "\n")
+        
         # 初始化核心组件
-        logger = FileLogger("auto_check.log")
-        storage = JsonConfigStorage("data.json")
+        logger = FileLogger()
+        storage = JsonConfigStorage()
         config_manager = ConfigManager(storage, logger)
         
-        # 配置检查
-        if not config_manager.config or not all(
-            key in config_manager.config 
-            for key in AppConstants.REQUIRED_FIELDS
-        ):
-            logger.log("检测到无效或缺失的配置", LogLevel.WARNING)
-            print(f"{Fore.YELLOW}首次使用或配置不完整，需要初始化{Style.RESET_ALL}")
-            choice = input("是否现在进行配置初始化? (y/n, 默认y): ").strip().lower() or 'y'
-            if choice != 'y':
-                logger.log("用户取消配置初始化", LogLevel.INFO)
-                sys.exit(0)
-        
-        # 配置更新流程
+        # 配置检查与初始化
         updater = ConfigUpdater(config_manager, logger)
-        try:
-            config = updater.init_config()
-            if not config:
-                raise ValueError("配置初始化失败")
-            
-            # 显示当前时间段设置
-            if config.get('enable_time_range', False):
-                print(f"\n{Fore.CYAN}当前运行时间段: {config.get('start_time', '08:00')} 至 {config.get('end_time', '22:00')}{Style.RESET_ALL}")
-            else:
-                print(f"\n{Fore.CYAN}时间段控制: 已禁用 (程序将全天候运行){Style.RESET_ALL}")
-                
-        except Exception as e:
-            logger.log(f"配置初始化错误: {e}", LogLevel.ERROR)
+        config = updater.init_config()
+        
+        if not config:
+            print(f"\n{Fore.RED}❌ 配置失败，程序退出{Style.RESET_ALL}")
             sys.exit(1)
         
-        # 启动签到任务
-        sign_task = SignTask(config=config, logger=logger)
-        print(f"\n{Fore.GREEN}=== 自动签到系统已启动 ==={Style.RESET_ALL}")
-        print("可用命令:")
-        print("  q - 退出程序")
-        print("  s - 立即执行签到检查")
-        print("  c - 显示当前状态\n")
+        # 显示配置摘要
+        print(f"\n{Fore.GREEN}✅ 配置完成！开始监控签到任务...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}当前配置摘要:{Style.RESET_ALL}")
+        print(f"- 班级ID: {config['class_id']}")
+        print(f"- 检查间隔: 每 {config['time']} 秒")
         
-        try:
-            sign_task.run()
-        except KeyboardInterrupt:
-            logger.log("用户手动终止程序", LogLevel.INFO)
-            sys.exit(0)
+        if config.get('enable_time_range', False):
+            print(f"- 运行时间段: {config.get('start_time', '08:00')} 至 {config.get('end_time', '22:00')}")
+        else:
+            print("- 运行时间段: 全天候运行")
             
+        print("\n系统正在运行中...\n")
+        
+        # 启动签到任务
+        SignTask(config=config, logger=logger).run()
+        
+    except KeyboardInterrupt:
+        print(f"\n{Fore.YELLOW}👋 程序已退出{Style.RESET_ALL}")
+        sys.exit(0)
     except Exception as e:
-        logger.log(f"系统启动失败: {e}", LogLevel.ERROR)
+        print(f"\n{Fore.RED}❌ 程序出错: {e}{Style.RESET_ALL}")
         sys.exit(1)

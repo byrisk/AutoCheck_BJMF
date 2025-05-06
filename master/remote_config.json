@@ -7,12 +7,11 @@
   "update_url": "https://example.com/download",
   "announcements": [
     {
-      "id": "custom_feature_contact_20250509", // 建议为每个公告添加一个唯一的 "id"
-      "message": "看完这段话：需要定制更多功能请直接联系作者", // 将 "content" 和 "title" 合并或选择一个作为 "message"
-      "link": "https://github.com/byrisk/AutoCheck_BJMF",    // 将 "url" 修改为 "link"
-      // "show_until": "2025-06-09T23:59:59Z" // 可选：如果需要设置有效期，请使用此格式
+      "id": "custom_feature_contact_20250509", 
+      "message": "看完这段话：需要定制更多功能请直接联系作者",
+      "link": "https://github.com/byrisk/AutoCheck_BJMF",   
+      "show_until": "2025-06-09T23:59:59Z" 
     }
-    // 您可以在这里添加更多公告对象
   ],
   "statistics_enabled": true
 }

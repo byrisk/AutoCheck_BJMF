@@ -25,7 +25,8 @@
   },
   "disabled_versions": [
     "0.9.0",
-    "1.0.0-beta"
+    "1.0.0-beta",
+    "1.0.1"
   ],
   "statistics": {
     "message": "感谢您使用本工具！目前累计用户已超过 1000 人。欢迎在GitHub上给我们点赞！"

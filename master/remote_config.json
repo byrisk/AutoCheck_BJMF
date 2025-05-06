@@ -2,7 +2,7 @@
   "version": "1.2.1",
   "enabled": false,
   "disable_reason": "",
-  "force_update": false,
+  "force_update": true,
   "latest_version": "1.2.2",
   "update_url": "https://example.com/download",
   "announcements": [

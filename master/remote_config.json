@@ -1,8 +1,8 @@
 {
   "version": "1.2.1",
-  "enabled": false,
-  "disable_reason": "",
-  "force_update": true,
+  "enabled": true,
+  "disable_reason": "测试",
+  "force_update": false,
   "latest_version": "1.2.2",
   "update_url": "https://example.com/download",
   "announcements": [

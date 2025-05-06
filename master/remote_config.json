@@ -18,15 +18,18 @@
       "show_until": "2025-07-01T23:59:59Z"
     }
   ],
-  "version_info": {
-    "latest_version": "11.0.5",
-    "release_notes_url": "https://github.com/your_username/your_repo/releases/tag/v1.0.5",
-    "download_url": "https://github.com/your_username/your_repo/releases/latest"
+   "version_info": {
+    "latest_version": "11.1.0",
+    "release_notes_url": "https://github.com/your_username/your_repo/releases/tag/v1.1.0",
+    "download_url": "https://github.com/your_username/your_repo/releases/latest",
+    "force_update": {
+      "enabled": true,
+      "if_older_than_version": "11.1.0",
+      "message": "检测到严重安全更新或功能改进。为了保证您的正常使用和账户安全，请立即更新到最新版本。"
   },
   "disabled_versions": [
     "0.9.0",
     "1.0.0-beta",
-    "1.0.1"
   ],
   "statistics": {
     "message": "感谢您使用本工具！目前累计用户已超过 1000 人。欢迎在GitHub上给我们点赞！"

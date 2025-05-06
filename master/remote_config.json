@@ -3,11 +3,11 @@
   "enabled": false,
   "disable_reason": "测试",
   "force_update": false,
-  "latest_version": "1.2.1",
+  "latest_version": "1.2.2",
   "update_url": "https://example.com/download",
   "announcements": [
     {
-      "date": "2025-05-01",
+      "date": "2025-05-09",
       "title": "看完这段话",
       "content": "需要定制更多功能请直接联系作者",
       "url": "https://github.com/byrisk/AutoCheck_BJMF"

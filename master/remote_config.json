@@ -1,19 +1,23 @@
 {
-    "version": "1.2.0",
-    "authorized": true,
-    "reason": "不给用",
-    "announcements": [
-        {
-            "id": 1,
-            "title": "📢 重要通知",
-            "content": "支持软件功能定制，解锁更多高级功能请联系作者",
-            "date": "2025-05-05",
-            "expiry": "2025-05-11",
-            
-        }
-    ],
-    "changelog": "最新版本改进：\n- 新增多公告支持\n- 优化错误提示\n- 修复时区问题",
-    "download_url": "https://github.com/byrisk/AutoCheck_BJMF/releases",
-    "force_update": false,
-    "valid_until": "2025-12-31"
+  "version": "1.2.1",
+  "enabled": true,
+  "disable_reason": "",
+  "force_update": false,
+  "latest_version": "1.2.2",
+  "update_url": "https://example.com/download",
+  "announcements": [
+    {
+      "date": "2025-05-01",
+      "title": "系统维护通知",
+      "content": "我们将在2025年5月10日进行系统维护，期间服务可能中断。",
+      "url": "https://example.com/announcement/maintenance"
+    },
+    {
+      "date": "2025-04-28",
+      "title": "新版本发布",
+      "content": "新版本1.2.2已发布，修复了若干bug，提升了稳定性。",
+      "url": "https://example.com/announcement/release"
+    }
+  ],
+  "statistics_enabled": true
 }

@@ -1,17 +1,33 @@
 {
-  "version": "1.2.1",
-  "enabled": false,
-  "disable_reason": "测试",
-  "force_update": false,
-  "latest_version": "1.2.2",
-  "update_url": "https://example.com/download",
   "announcements": [
     {
-      "id": "custom_feature_contact_20250509", 
-      "message": "看完这段话：需要定制更多功能请直接联系作者",
-      "link": "https://github.com/byrisk/AutoCheck_BJMF",   
-      "show_until": "2025-06-09T23:59:59Z" 
+      "id": "welcome_message_20250507",
+      "message": "欢迎使用自动签到脚本！新版本增加了远程公告功能。",
+      "link": "https://github.com/your_username/your_repo",
+      "show_until": "2025-12-31T23:59:59Z"
+    },
+    {
+      "id": "maintenance_notice_20250510",
+      "message": "重要通知：系统将于2025年5月15日凌晨2点到4点进行维护，期间服务可能短暂中断。",
+      "show_until": "2025-05-16T00:00:00Z"
+    },
+    {
+      "id": "feature_update_20250601",
+      "message": "新功能上线：现已支持自定义签到时间段！详情请查看文档。",
+      "link": "https://github.com/your_username/your_repo/wiki/TimeRangeFeature",
+      "show_until": "2025-07-01T23:59:59Z"
     }
   ],
-  "statistics_enabled": true
+  "version_info": {
+    "latest_version": "11.0.5",
+    "release_notes_url": "https://github.com/your_username/your_repo/releases/tag/v1.0.5",
+    "download_url": "https://github.com/your_username/your_repo/releases/latest"
+  },
+  "disabled_versions": [
+    "0.9.0",
+    "1.0.0-beta"
+  ],
+  "statistics": {
+    "message": "感谢您使用本工具！目前累计用户已超过 1000 人。欢迎在GitHub上给我们点赞！"
+  }
 }

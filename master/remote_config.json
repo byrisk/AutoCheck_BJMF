@@ -1,22 +1,16 @@
 {
   "version": "1.2.1",
-  "enabled": true,
+  "enabled": false,
   "disable_reason": "测试",
-  "force_update": true,
-  "latest_version": "1.2.2",
+  "force_update": false,
+  "latest_version": "1.2.1",
   "update_url": "https://example.com/download",
   "announcements": [
     {
       "date": "2025-05-01",
-      "title": "系统维护通知",
-      "content": "我们将在2025年5月10日进行系统维护，期间服务可能中断。",
-      "url": "https://example.com/announcement/maintenance"
-    },
-    {
-      "date": "2025-04-28",
-      "title": "新版本发布",
-      "content": "新版本1.2.2已发布，修复了若干bug，提升了稳定性。",
-      "url": "https://example.com/announcement/release"
+      "title": "看完这段话",
+      "content": "需要定制更多功能请直接联系作者",
+      "url": "https://github.com/byrisk/AutoCheck_BJMF"
     }
   ],
   "statistics_enabled": true

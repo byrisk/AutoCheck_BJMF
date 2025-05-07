@@ -1,27 +1,62 @@
 {
-  "announcements": [
-    {
-      "id": "welcome_message_20250507",
-      "message": "欢迎使用自动签到脚本！新版本增加了远程公告功能。",
-      "link": "https://github.com/your_username/your_repo",
-      "show_until": "2025-12-31T23:59:59Z"
-    }
-  ],
-  "version_info": {
-    "latest_version": "1.0.0",
-    "release_notes_url": "https://github.com/your_username/your_repo/releases/tag/v1.1.0",
-    "download_url": "https://github.com/your_username/your_repo/releases/latest",
-    "force_update": {
-      "enabled": false,
-      "if_older_than_version": "11.1.0",
-      "message": "检测到严重安全更新或功能改进。为了保证您的正常使用和账户安全，请立即更新到最新版本。"
+  "script_control": {
+    "globally_disabled": false,
+    "disabled_message": "此脚本已被管理员远程禁用",
+    "enable_statistics_reporting": true,
+    "latest_version": "2.0.1",
+    "force_update_below_version": "1.9.0",
+    "search_interval": 60,
+    "client_overrides": {
+      "search_interval": 90
     }
   },
-  "disabled_versions": [
-    "0.9.0",
-    "1.0.0-beta"
-  ],
-  "statistics": {
-    "message": "感谢您使用本工具！目前累计用户已超过 1000 人。欢迎在GitHub上给我们点赞！"
+  "announcement": {
+    "id": "20240507_notice",
+    "title": "重要系统公告",
+    "message": "1. 签到系统将于本周五凌晨2:00-3:00进行维护升级\n2. 请确保使用最新版脚本\n3. 如有问题请联系管理员",
+    "show_once": true,
+    "priority": 1
+  },
+  "sign_rules": {
+    "allowed_locations": [
+      {
+        "name": "主校区",
+        "lat_range": [39.9000, 39.9100],
+        "lng_range": [116.4000, 116.4100]
+      },
+      {
+        "name": "分校区",
+        "lat_range": [39.9200, 39.9300],
+        "lng_range": [116.4200, 116.4300]
+      }
+    ],
+    "time_windows": [
+      {
+        "name": "早晨签到",
+        "start": "07:00",
+        "end": "08:30"
+      },
+      {
+        "name": "下午签到",
+        "start": "13:00",
+        "end": "14:30"
+      }
+    ]
+  },
+  "client_config": {
+    "default_time_range": {
+      "enable": true,
+      "start_time": "08:00",
+      "end_time": "22:00"
+    },
+    "pushplus_template": {
+      "success": "✅ 签到成功通知\n时间: {time}\n位置: {location}",
+      "failure": "⚠️ 签到失败\n原因: {reason}\n请手动处理"
+    }
+  },
+  "metadata": {
+    "config_version": "1.1",
+    "last_updated": "2024-05-07T12:00:00Z",
+    "maintainer": "admin@example.com"
   }
 }

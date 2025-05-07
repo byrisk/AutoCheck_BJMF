@@ -3,7 +3,7 @@
     "forced_update_below_version": "0.0.0"
   },
   "access_control": {
-    "global_disable": true,
+    "global_disable": false,
     "device_blacklist": [],
     "device_whitelist": []
   },

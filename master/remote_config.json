@@ -1,62 +1,19 @@
 {
-  "script_control": {
-    "application_run_event": false,
-    "disabled_message": "此脚本已被管理员远程禁用",
-    "enable_statistics_reporting": true,
-    "latest_version": "2.0.1",
-    "force_update_below_version": "1.9.0",
-    "search_interval": 60,
-    "client_overrides": {
-      "search_interval": 90
-    }
+  "script_version_control": {
+    "forced_update_below_version": "0.0.0"
+  },
+  "access_control": {
+    "global_disable": false,
+    "device_blacklist": [],
+    "device_whitelist": []
   },
   "announcement": {
-    "id": "20240507_notice",
-    "title": "重要系统公告",
-    "message": "1. 签到系统将于本周五凌晨2:00-3:00进行维护升级\n2. 请确保使用最新版脚本\n3. 如有问题请联系管理员",
-    "show_once": true,
-    "priority": 1
+    "id": "announce_20250507_01",
+    "message": "🎉 Welcome to the AutoCheck System! We hope you find this tool helpful. Remember to check for updates regularly.",
+    "enabled": true
   },
-  "sign_rules": {
-    "allowed_locations": [
-      {
-        "name": "主校区",
-        "lat_range": [39.9000, 39.9100],
-        "lng_range": [116.4000, 116.4100]
-      },
-      {
-        "name": "分校区",
-        "lat_range": [39.9200, 39.9300],
-        "lng_range": [116.4200, 116.4300]
-      }
-    ],
-    "time_windows": [
-      {
-        "name": "早晨签到",
-        "start": "07:00",
-        "end": "08:30"
-      },
-      {
-        "name": "下午签到",
-        "start": "13:00",
-        "end": "14:30"
-      }
-    ]
-  },
-  "client_config": {
-    "default_time_range": {
-      "enable": true,
-      "start_time": "08:00",
-      "end_time": "22:00"
-    },
-    "pushplus_template": {
-      "success": "✅ 签到成功通知\n时间: {time}\n位置: {location}",
-      "failure": "⚠️ 签到失败\n原因: {reason}\n请手动处理"
-    }
-  },
-  "metadata": {
-    "config_version": "1.1",
-    "last_updated": "2024-05-07T12:00:00Z",
-    "maintainer": "admin@example.com"
+  "settings": {
+    "config_refresh_interval_seconds": 900,
+    "data_upload_interval_seconds": 3600
   }
 }

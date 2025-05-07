@@ -1,6 +1,6 @@
 {
   "script_control": {
-    "globally_disabled": false,
+    "globally_disabled": true,
     "disabled_message": "此脚本已被管理员远程禁用",
     "enable_statistics_reporting": true,
     "latest_version": "2.0.1",

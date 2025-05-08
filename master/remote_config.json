@@ -1,15 +1,16 @@
 {
   "script_version_control": {
-    "forced_update_below_version": "0.0.0"
+    "forced_update_below_version": "1.0.0" 
   },
+  "latest_stable_version": "1.0.1",  
   "access_control": {
     "global_disable": false,
     "device_blacklist": [],
     "device_whitelist": []
   },
   "announcement": {
-    "id": "announce_20250507_01",
-    "message": "🎉 Welcome to the AutoCheck System! We hope you find this tool helpful. Remember to check for updates regularly.",
+    "id": "anno-001",
+    "message": "欢迎使用！如有问题请反馈。",
     "enabled": true
   },
   "settings": {

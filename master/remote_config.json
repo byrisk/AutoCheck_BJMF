@@ -1,16 +1,20 @@
 {
   "script_version_control": {
-    "forced_update_below_version": "1.0.0" 
+    "forced_update_below_version": "1.0.0",
+    "latest_stable_version": "1.1.0"
   },
-  "latest_stable_version": "1.0.1",  
   "access_control": {
     "global_disable": false,
-    "device_blacklist": [],
-    "device_whitelist": []
+    "device_blacklist": [
+      "device_id_to_block_1"
+    ],
+    "device_whitelist": [
+      "allowed_device_id_1"
+    ]
   },
   "announcement": {
-    "id": "anno-001",
-    "message": "欢迎使用！如有问题请反馈。",
+    "id": "anno_20250509_01",
+    "message": "欢迎使用新版本！现已支持学校位置自动配置和运行时随机化。",
     "enabled": true
   },
   "settings": {

@@ -3,8 +3,8 @@
     "enabled": true,
     "forced_update_below_version": "1.0.0",
     "latest_stable_version": "1.1.0"
-    "forced_update_reason": "A critical security vulnerability has been patched. Please update immediately for your safety.", // Optional reason
-    "optional_update_message": "A new version {latest_stable_version} is available with exciting new features and improvements! (You are on {current_version})" // Dynamic message
+    "forced_update_reason": "A critical security vulnerability has been patched. Please update immediately for your safety.", 
+    "optional_update_message": "A new version {latest_stable_version} is available with exciting new features and improvements! (You are on {current_version})" 
   },
   "access_control": {
     "global_disable": false,

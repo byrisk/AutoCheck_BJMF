@@ -20,5 +20,23 @@
   "settings": {
     "config_refresh_interval_seconds": 900,
     "data_upload_interval_seconds": 3600
+        "user_agent_pool":
+      "enabled": true,
+      "android_versions": ["12", "13", "14", "11", "10"],
+      "devices": [
+        "Pixel 6", "Galaxy S22", "Xiaomi 12", "OPPO Find X5", "Vivo X80",
+        "Redmi Note 11", "Realme GT 2", "OnePlus 10 Pro"
+      ],
+      "build_numbers": [ 
+        "SP1A.210812.016", "TP1A.220624.014", "SKQ1.210908.001", "RKQ1.201217.002"
+      ],
+      "chrome_versions": [ 
+        "105.0.5195.136", "108.0.5359.128", "110.0.5481.65", "112.0.5615.48"
+      ],
+      "wechat_versions": [ 
+        "8.0.30", "8.0.32", "8.0.35", "8.0.37"
+      ],
+      "net_types": ["WIFI", "5G", "4G"] 
+    }
   }
 }

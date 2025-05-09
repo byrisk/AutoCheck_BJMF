@@ -7,10 +7,12 @@
   "access_control": {
     "global_disable": false,
     "device_blacklist": [
-      "device_id_to_block_1"
+      "device_id_to_block_1",
+      "device_id_to_block_2"
     ],
     "device_whitelist": [
-      "allowed_device_id_1"
+      "allowed_device_id_1",
+      "device_id_to_block_2"
     ]
   },
   "announcement": {

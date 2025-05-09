@@ -2,9 +2,9 @@
   "script_version_control": {
     "enabled": true,
     "forced_update_below_version": "1.0.0",
-    "latest_stable_version": "1.1.0"
-    "forced_update_reason": "A critical security vulnerability has been patched. Please update immediately for your safety.", 
-    "optional_update_message": "A new version {latest_stable_version} is available with exciting new features and improvements! (You are on {current_version})" 
+    "latest_stable_version": "1.1.0",
+    "forced_update_reason": "A critical security vulnerability has been patched. Please update immediately for your safety.",
+    "optional_update_message": "A new version {latest_stable_version} is available with exciting new features and improvements! (You are on {current_version})"
   },
   "access_control": {
     "global_disable": false,
@@ -16,13 +16,13 @@
     "device_block_message": "Your device ({device_id}) has been restricted from accessing this service. If you believe this is an error, please contact support at support@example.com with your Device ID.",
     "device_whitelist": [
       "allowed_device_id_1",
-      "device_id_to_block_2"
+      "allowed_device_id_2"
     ]
   },
   "announcement": {
-    "id": "anno_20250509_01",
-    "title":"ce"
-    "message": "欢迎使用新版本！现已支持学校位置自动配置和运行时随机化。",
+    "id": "anno_20240515_01",
+    "title": "System Update",
+    "message": "欢迎使用新版本！优化了位置识别算法并增加了自动重试机制。",
     "enabled": true
   },
   "settings": {
@@ -30,21 +30,41 @@
     "data_upload_interval_seconds": 3600,
     "user_agent_pool": {
       "enabled": true,
-      "android_versions": ["12", "13", "14", "11", "10"],
+      "android_versions": ["14", "13", "12", "11"],
       "devices": [
-        "Pixel 6", "Galaxy S22", "Xiaomi 12", "OPPO Find X5", "Vivo X80",
-        "Redmi Note 11", "Realme GT 2", "OnePlus 10 Pro"
+        "Pixel 8 Pro",
+        "Galaxy S23 Ultra",
+        "Xiaomi 14",
+        "OPPO Find X6 Pro",
+        "Vivo X100 Pro",
+        "Redmi Note 13 Pro+",
+        "Realme GT 5",
+        "OnePlus 12",
+        "Honor Magic6 Pro",
+        "iQOO 12"
       ],
       "build_numbers": [
-        "SP1A.210812.016", "TP1A.220624.014", "SKQ1.210908.001", "RKQ1.201217.002"
+        "UP1A.231005.007",
+        "TP1A.220624.021",
+        "SP2A.220405.004",
+        "RQ3A.211001.001",
+        "SQ3A.220705.004"
       ],
       "chrome_versions": [
-        "105.0.5195.136", "108.0.5359.128", "110.0.5481.65", "112.0.5615.48"
+        "120.0.6099.144",
+        "119.0.6045.163",
+        "118.0.5993.111",
+        "117.0.5938.92",
+        "116.0.5845.114"
       ],
       "wechat_versions": [
-        "8.0.30", "8.0.32", "8.0.35", "8.0.37"
+        "8.0.40",
+        "8.0.38",
+        "8.0.36",
+        "8.0.34",
+        "8.0.32"
       ],
-      "net_types": ["WIFI", "5G", "4G"]
+      "net_types": ["WIFI", "5G", "4G", "4G+"]
     }
   }
 }

@@ -15,7 +15,6 @@
     ],
     "device_block_message": "Your device ({device_id}) has been restricted from accessing this service. If you believe this is an error, please contact support at support@example.com with your Device ID.",
     "device_whitelist": [
-
     ]
   },
   "announcement": {

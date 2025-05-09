@@ -7,7 +7,7 @@
     "optional_update_message": "A new version {latest_stable_version} is available with exciting new features and improvements! (You are on {current_version})"
   },
   "access_control": {
-    "global_disable": false,
+    "global_disable": true,
     "global_disable_message": "The service is temporarily down for maintenance. Please check back later or contact support at support@example.com.",
     "device_blacklist": [
       "device_id_to_block_1",

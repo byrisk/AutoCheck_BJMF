@@ -102,33 +102,17 @@
 
 ```bash
 pip install -r requirements.txt
-
-2️⃣ 配置账号信息 config.py
-USERNAME = "你的账号"
-PASSWORD = "你的密码"
-CHROME_PATH = "chromedriver.exe 路径"
-PHOTO_PATH = "images/photo.png"  # 可选照片路径
-
-你也可以设置默认定位地址（或开启随机偏移）：
-
-LATITUDE = 39.9042       # 北京
-LONGITUDE = 116.4074
-OFFSET = 0.0001          # 每次签到微小变动，避免重复
-
-3️⃣ 首次扫码（非必须）
-python get_cookie.py
+```
+###2️⃣ 首次扫码或收到手动输入cookie（必须）
 
 会保存到 data.json，自动识别获取的二维码
 
-4️⃣ 启动核心签到脚本
-python core.py
 
 ✅ 可选：使用定时任务签到（支持循环）
-python schedule.py
 
 设置签到间隔等参数后，定时循环进行签到操作。
 
-🧩 项目结构
+###🧩 项目结构
 AutoCheck_BJMF/
 ├── core.py         # 🌟 主程序入口，签到控制中心
 ├── get_cookie.py   # 用于首次扫码抓取任务信息
@@ -141,28 +125,17 @@ AutoCheck_BJMF/
 ├── data.json       # 缓存抓包信息，支持续签
 ├── logs/           # 每次签到的日志记录
 └── requirements.txt
-⚙️ 配置说明（settings.py）
+##⚙️ 配置说明（settings.py）
 参数	示例值	描述
 ENABLE_QRCODE	True	是否启用二维码签到模式
 ENABLE_GPS	True	是否启用定位签到
 ENABLE_PHOTO	True	是否启用拍照上传
 HEADLESS	True	是否后台静默运行（无浏览器界面）
-🕒 定时执行方式（推荐）
+
+##🕒 定时执行方式（推荐）
 ▶ Windows 用户
-可使用系统内置「任务计划程序」，结合以下命令：
+可使用系统内置「任务计划程序」
 
-python schedule.py
-
-▶ Linux / macOS 用户
-使用 Crontab：
-
-crontab -e
-
-添加：
-
-0 8 * * * /usr/bin/python3 /your_path/core.py >> logs/autolog.txt
-
-每天 8:00 自动签到并保存结果日志
 
 📂 历史签到信息记录
 签到任务信息将保存在：
@@ -170,17 +143,17 @@ crontab -e
 data.json   # 二维码或GPS信息缓存
 logs/       # 每次签到日志保存
 
-📋 常见问题 (FAQ)
+##📋 常见问题 (FAQ)
 问题	解决方案
 ChromeDriver 报错	检查浏览器版本是否与 chromedriver 对应
 签到没生效	检查是否已过签到时间／是否重复提交
 拍照节点报错	可更换 PHOTO_PATH 为本地任意图片
 data.json 丢失？	可重新运行 get_cookie.py
-📄 License
+##📄 License
 本项目基于开源协议 MIT License
 所有代码可自由使用、修改与发布（保留原作者署名信息）
 
-👨‍💻 作者
+##👨‍💻 作者
 开发者：byrisk
 开源仓库：https://github.com/byrisk/AutoCheck_BJMF
 

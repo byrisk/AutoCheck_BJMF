@@ -101,9 +101,10 @@
 ### 1️⃣ 安装依赖
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt.
 ```
-###2️⃣ 首次扫码或收到手动输入cookie（必须）
+
+### 2️⃣ 首次扫码或收到手动输入cookie（必须）
 
 会保存到 data.json，自动识别获取的二维码
 
@@ -112,7 +113,7 @@ pip install -r requirements.txt
 
 设置签到间隔等参数后，定时循环进行签到操作。
 
-###🧩 项目结构
+### 🧩 项目结构
 AutoCheck_BJMF/
 ├── core.py         # 🌟 主程序入口，签到控制中心
 ├── get_cookie.py   # 用于首次扫码抓取任务信息
@@ -125,14 +126,14 @@ AutoCheck_BJMF/
 ├── data.json       # 缓存抓包信息，支持续签
 ├── logs/           # 每次签到的日志记录
 └── requirements.txt
-##⚙️ 配置说明（settings.py）
+## ⚙️ 配置说明（settings.py）
 参数	示例值	描述
 ENABLE_QRCODE	True	是否启用二维码签到模式
 ENABLE_GPS	True	是否启用定位签到
 ENABLE_PHOTO	True	是否启用拍照上传
 HEADLESS	True	是否后台静默运行（无浏览器界面）
 
-##🕒 定时执行方式（推荐）
+## 🕒 定时执行方式（推荐）
 ▶ Windows 用户
 可使用系统内置「任务计划程序」
 
@@ -143,17 +144,17 @@ HEADLESS	True	是否后台静默运行（无浏览器界面）
 data.json   # 二维码或GPS信息缓存
 logs/       # 每次签到日志保存
 
-##📋 常见问题 (FAQ)
+## 📋 常见问题 (FAQ)
 问题	解决方案
 ChromeDriver 报错	检查浏览器版本是否与 chromedriver 对应
 签到没生效	检查是否已过签到时间／是否重复提交
 拍照节点报错	可更换 PHOTO_PATH 为本地任意图片
 data.json 丢失？	可重新运行 get_cookie.py
-##📄 License
+## 📄 License
 本项目基于开源协议 MIT License
 所有代码可自由使用、修改与发布（保留原作者署名信息）
 
-##👨‍💻 作者
+## 👨‍💻 作者
 开发者：byrisk
 开源仓库：https://github.com/byrisk/AutoCheck_BJMF
 

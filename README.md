@@ -1,7 +1,7 @@
 <h1 align="center">📦 班级魔方 (AutoCheck_BJMF)</h1>
 
 <p align="center">
-    一款基于 Selenium 的自动化签到工具，支持北京“班级魔方”平台的 <br>
+    一款基于 Selenium 的自动化签到工具，支持“班级魔方”平台的 <br>
     ✅ GPS签到 ✅ 二维码签到 ✅ 拍照签到 ✅ 持续签到 ✅ 定时任务 ✅ 自动缓存
 </p>
 
